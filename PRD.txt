@@ -224,7 +224,7 @@ to session screen.
 UI Specification:
 
 Layout:
-- Full viewport, dark background (#0A0A14 or similar deep navy)
+- Full viewport, light background (#0A0A14 or similar deep navy)
 - Radial gradient background that animates slowly (8-10s cycle)
 - Animation speed increases when user starts typing (10s -> 6s via class toggle)
 - Centered content column, max-width 560px

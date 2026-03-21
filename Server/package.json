@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Backend server for Recall app using Express and MongoDB",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js"
@@ -14,7 +15,8 @@
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "mongoose": "^9.3.1"
+    "mongoose": "^9.3.1",
+    "svix": "^1.89.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
