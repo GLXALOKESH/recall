@@ -21,9 +21,17 @@ const sessionSchema = new mongoose.Schema(
             enum: ['initializing', 'active', 'completed'],
             default: 'initializing',
         },
+        lastMessageAt: {
+            type: Date,
+            default: Date.now,
+        },
         startTime: {
             type: Date,
             default: Date.now,
+        },
+        endTime: {
+            type: Date,
+            default: null,
         },
         conceptTree: {
             type: mongoose.Schema.Types.Mixed,
@@ -41,7 +49,7 @@ const sessionSchema = new mongoose.Schema(
         },
         blindSpots: [
             {
-                type: String,
+                type: mongoose.Schema.Types.Mixed,
             }
         ],
         score: {
@@ -57,6 +65,14 @@ const sessionSchema = new mongoose.Schema(
                 type: String,
             }
         ],
+        misconception: {
+            type: mongoose.Schema.Types.Mixed,
+            default: null,
+        },
+        sourceText: {
+            type: String,
+            default: null,
+        },
     },
     {
         timestamps: true,
