@@ -85,6 +85,10 @@ const sessionSchema = new mongoose.Schema(
             type: String,
             default: null,
         },
+        pasteCount: {
+            type: Number,
+            default: 0,
+        },
     },
     {
         timestamps: true,

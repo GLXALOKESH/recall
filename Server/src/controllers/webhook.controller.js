@@ -29,7 +29,7 @@ export const clerkWebhookController = async (req, res) => {
                     lastName,
                     imageUrl,
                 },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
             console.log(`User ${id} was ${eventType === 'user.created' ? 'created' : 'updated'}`);
         }

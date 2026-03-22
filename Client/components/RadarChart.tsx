@@ -21,12 +21,14 @@ export default function RadarChart({ concepts, depthScores }: RadarChartProps) {
     useEffect(() => {
         if (!containerRef.current || !concepts || concepts.length === 0) return;
 
-        const width = 320;
-        const height = 320;
-        const margin = 50; // Extra margin for text
+        const chartSize = 380;
+        const viewPadding = 78; // Protect long labels from clipping while keeping chart larger
+        const width = chartSize + (viewPadding * 2);
+        const height = chartSize + (viewPadding * 2);
+        const margin = 56;
         const centerX = width / 2;
         const centerY = height / 2;
-        const maxRadius = (Math.min(width, height) / 2) - margin;
+        const maxRadius = (chartSize / 2) - margin;
 
         // Clear any existing SVG
         d3.select(containerRef.current).selectAll("svg").remove();
@@ -74,8 +76,8 @@ export default function RadarChart({ concepts, depthScores }: RadarChartProps) {
                     angle,
                     x: Math.cos(angle) * maxRadius,
                     y: Math.sin(angle) * maxRadius,
-                    labelX: Math.cos(angle) * (maxRadius + 20),
-                    labelY: Math.sin(angle) * (maxRadius + 20)
+                    labelX: Math.cos(angle) * (maxRadius + 26),
+                    labelY: Math.sin(angle) * (maxRadius + 26)
                 };
             });
         };
@@ -105,11 +107,21 @@ export default function RadarChart({ concepts, depthScores }: RadarChartProps) {
         function wrapText(text: d3.Selection<SVGTextElement, unknown, null, undefined>, width: number) {
             text.each(function() {
                 const textEl = d3.select(this);
-                const words = textEl.text().split(/\s+/).reverse();
+                const splitLongWord = (word: string, maxChars = 12) => {
+                    if (word.length <= maxChars) return [word];
+                    const chunks: string[] = [];
+                    for (let i = 0; i < word.length; i += maxChars) {
+                        chunks.push(word.slice(i, i + maxChars));
+                    }
+                    return chunks;
+                };
+
+                const rawWords = textEl.text().split(/\s+/).filter(Boolean);
+                const words = rawWords.flatMap((word) => splitLongWord(word)).reverse();
                 let word;
                 let line: string[] = [];
                 let lineNumber = 0;
-                const lineHeight = 1.1; // ems
+                const lineHeight = 1.2; // ems
                 const y = textEl.attr("y");
                 const x = textEl.attr("x");
                 const dy = parseFloat(textEl.attr("dy") || "0");
@@ -145,12 +157,12 @@ export default function RadarChart({ concepts, depthScores }: RadarChartProps) {
                 .attr("dominant-baseline", "middle")
                 .attr("fill", "#1A1A2E")
                 .attr("fill-opacity", 0.45) // faint initially
-                .attr("font-size", "10px")
+                .attr("font-size", "13px")
                 .attr("font-family", "var(--font-ui, sans-serif)")
                 .attr("font-weight", 600)
                 .attr("class", `axis-label axis-label-${axis.id}`)
                 .text(axis.name)
-                .call(wrapText, 80); // Wrap names max 80px width
+                .call(wrapText, 128); // Wider wrap keeps larger labels readable
         });
 
         const getPolygonPoints = (scores: Record<string, number>) => {
@@ -219,8 +231,9 @@ export default function RadarChart({ concepts, depthScores }: RadarChartProps) {
         const g = svg.select("g");
         const filledPolygon = g.select(".filled-polygon");
 
-        const margin = 50;
-        const maxRadius = (Math.min(320, 320) / 2) - margin;
+        const chartSize = 380;
+        const margin = 56;
+        const maxRadius = (chartSize / 2) - margin;
 
         const depthScale = d3.scaleOrdinal<number, number>()
             .domain([0, 1, 2, 3, 4, 5])

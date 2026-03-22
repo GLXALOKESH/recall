@@ -398,6 +398,10 @@ ${conceptStatus}
 
 Misconception Result: ${misconceptionResult === 'caught' ? 'The user successfully caught and corrected Mia\'s confusion!' : (misconceptionResult === 'missed' ? 'The user missed a significant misconception Mia introduced.' : 'No major misconceptions were addressed.')}
 
+Paste Behavior:
+- Text pasted into chat input ${session.pasteCount || 0} times during this session.
+- Treat frequent paste activity as a sign the user may be relying on copied text over spontaneous teaching.
+
 Chat History:
 ${chatLog.slice(-4000)} // truncate to avoid token limits
 
@@ -412,7 +416,12 @@ GENERATE A JSON REPORT:
     }
   },
   "best_moment_note": "A note about the user's most effective explanation in the chat.",
-  "standout_stat": "A surprising or encouraging stat (e.g., 'You connected X to Y seamlessly!')"
+    "standout_stat": "A surprising or encouraging stat (e.g., 'You connected X to Y seamlessly!')",
+    "paste_behavior": {
+        "paste_count": ${session.pasteCount || 0},
+        "paste_flagged": ${session.pasteCount > 0 ? 'true' : 'false'},
+        "note": "A short line about how paste behavior may have affected authenticity, or null if no pasting happened."
+    }
 }
 
 RESPONSE RULES:
@@ -425,6 +434,18 @@ RESPONSE RULES:
         const responseText = await call_flash(prompt);
         const cleaned = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
         const reportData = JSON.parse(cleaned);
+
+        reportData.paste_behavior = {
+            paste_count: typeof reportData?.paste_behavior?.paste_count === 'number'
+                ? reportData.paste_behavior.paste_count
+                : (session.pasteCount || 0),
+            paste_flagged: typeof reportData?.paste_behavior?.paste_flagged === 'boolean'
+                ? reportData.paste_behavior.paste_flagged
+                : ((session.pasteCount || 0) > 0),
+            note: reportData?.paste_behavior?.note ?? ((session.pasteCount || 0) > 0
+                ? 'Some explanations were pasted into the input. Try explaining more in your own words for a stronger mastery signal.'
+                : null)
+        };
 
         // 3. Update Session
         session.report = reportData;
@@ -445,5 +466,32 @@ RESPONSE RULES:
     } catch (error) {
         console.error("Error generating report:", error);
         res.status(500).json({ success: false, message: 'Failed to generate report', error: error.message });
+    }
+};
+
+export const recordPasteEvent = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const session = await Session.findOneAndUpdate(
+            { sessionId: id },
+            { $inc: { pasteCount: 1 } },
+            { returnDocument: 'after' }
+        );
+
+        if (!session) {
+            return res.status(404).json({ success: false, message: 'Session not found' });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                pasteCount: session.pasteCount,
+                pasteFlagged: session.pasteCount > 0,
+            }
+        });
+    } catch (error) {
+        console.error('Error recording paste event:', error);
+        return res.status(500).json({ success: false, message: 'Server error', error: error.message });
     }
 };

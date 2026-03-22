@@ -2,7 +2,7 @@
 
 import { DotPattern } from "@/components/ui/dot-pattern"
 import { useParams } from "next/navigation"
-import { Copy, ThumbsUp, Volume2, Paperclip, Sparkles, Mic, Send, Loader2, X, AlertCircle } from "lucide-react"
+import { Copy, ThumbsUp, Volume2, Paperclip, Sparkles, Mic, Send, Loader2, X, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import RadarChart from "@/components/RadarChart"
@@ -32,7 +32,7 @@ export default function SessionPage() {
     const [isLoading, setIsLoading] = useState(true)
 
     const [messages, setMessages] = useState<any[]>([])
-    const [inputValue, setInputValue] = useState("")
+    const [hasInput, setHasInput] = useState(false)
     const [isStreaming, setIsStreaming] = useState(false)
     const [isRecording, setIsRecording] = useState(false)
     const [speechSupported, setSpeechSupported] = useState(true)
@@ -46,6 +46,8 @@ export default function SessionPage() {
     const [isSessionEnded, setIsSessionEnded] = useState(false)
     const [showEndModal, setShowEndModal] = useState(false)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
+    const composerInputRef = useRef<HTMLInputElement | null>(null)
+    const composerValueRef = useRef("")
     const activeAudioRef = useRef<HTMLAudioElement | null>(null)
     const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null)
     const speechInputSeedRef = useRef("")
@@ -62,7 +64,41 @@ export default function SessionPage() {
     const [brushColor, setBrushColor] = useState("#00897B")
     const [brushSize, setBrushSize] = useState(4)
     const [shapeText, setShapeText] = useState("")
+    const [isCanvasCollapsed, setIsCanvasCollapsed] = useState(true)
     const router = useRouter()
+
+    const handleComposerPaste = async () => {
+        if (!id) return;
+
+        try {
+            await fetch(`${BACKEND_URL}/api/sessions/${id}/paste`, {
+                method: 'POST'
+            });
+        } catch (error) {
+            console.error("Failed to record paste event:", error);
+        }
+    };
+
+    const setComposerValue = (nextValue: string) => {
+        composerValueRef.current = nextValue;
+
+        if (composerInputRef.current && composerInputRef.current.value !== nextValue) {
+            composerInputRef.current.value = nextValue;
+        }
+
+        const nextHasInput = nextValue.trim().length > 0;
+        setHasInput((prev) => (prev === nextHasInput ? prev : nextHasInput));
+    };
+
+    const handleComposerChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const nextValue = event.target.value;
+        composerValueRef.current = nextValue;
+
+        const nextHasInput = nextValue.trim().length > 0;
+        if (nextHasInput !== hasInput) {
+            setHasInput(nextHasInput);
+        }
+    };
 
     const setupCanvas = () => {
         const canvas = canvasRef.current;
@@ -348,7 +384,8 @@ export default function SessionPage() {
 
         setSpeechError("");
         setIsRecording(true);
-        speechInputSeedRef.current = inputValue.trim() ? `${inputValue.trim()} ` : "";
+        const currentInput = composerValueRef.current.trim();
+        speechInputSeedRef.current = currentInput ? `${currentInput} ` : "";
         speechAccumulatorRef.current = { final: "", interim: "" };
 
         try {
@@ -382,7 +419,7 @@ export default function SessionPage() {
                     const combined = `${speechInputSeedRef.current}${final}${interim}`
                         .replace(/\s+/g, " ")
                         .trimStart();
-                    setInputValue(combined);
+                    setComposerValue(combined);
                     speechUpdateTimeoutRef.current = null;
                 }, 100);
             };
@@ -414,7 +451,7 @@ export default function SessionPage() {
                     clearTimeout(speechUpdateTimeoutRef.current);
                     speechUpdateTimeoutRef.current = null;
                 }
-                setInputValue((prev) => prev.trim());
+                setComposerValue(composerValueRef.current.trim());
             };
 
             speechRecognitionRef.current = recognition;
@@ -711,7 +748,8 @@ export default function SessionPage() {
     };
 
     const sendMessage = async () => {
-        if (!inputValue.trim() || isStreaming) return;
+        const userMsg = composerValueRef.current.trim();
+        if (!userMsg || isStreaming) return;
 
         if (speechRecognitionRef.current) {
             speechRecognitionRef.current.stop();
@@ -719,15 +757,14 @@ export default function SessionPage() {
             setIsRecording(false);
         }
 
-        const userMsg = inputValue;
-        setInputValue("");
+        setComposerValue("");
         await processChatTurn(userMsg);
     };
 
     const sendDrawing = async () => {
         if (isStreaming) return;
 
-        const userMsg = inputValue.trim();
+        const userMsg = composerValueRef.current.trim();
         if (!userMsg) {
             setSpeechError("Type your message before sending the drawing.");
             return;
@@ -746,7 +783,7 @@ export default function SessionPage() {
         }
 
         const drawingImage = canvas.toDataURL("image/png");
-        setInputValue("");
+        setComposerValue("");
         await processChatTurn(userMsg, drawingImage);
     };
 
@@ -819,7 +856,7 @@ export default function SessionPage() {
             <div className="relative z-10 mx-auto flex h-[calc(100vh-80px)] w-full flex-col p-6 lg:flex-row gap-6">
 
                 {/* Left Partition - Live Chat */}
-                <div className="lg:basis-[42%] lg:max-w-[42%] relative overflow-hidden rounded-[2.5rem] bg-white/40 backdrop-blur-3xl shadow-[0_8px_32px_0_rgba(26,26,46,0.04)] border border-white/60 p-6 flex flex-col min-h-0">
+                <div className={`${isCanvasCollapsed ? "lg:basis-[75%] lg:max-w-[75%]" : "lg:basis-[42%] lg:max-w-[42%]"} relative overflow-hidden rounded-[2.5rem] bg-white/40 backdrop-blur-3xl shadow-[0_8px_32px_0_rgba(26,26,46,0.04)] border border-white/60 p-6 flex flex-col min-h-0 transition-all duration-300`}>
 
                     {/* Aurora Orbs (Colorful Gradient) */}
                     <div className="absolute -left-32 -top-32 z-0 h-96 w-96 rounded-full bg-[#00897B] opacity-20 blur-[100px]" />
@@ -842,15 +879,26 @@ export default function SessionPage() {
                                 </h1>
                                 <p className="text-[13px] text-[#4A4A68] mt-0.5">Teaching Mia everything you know</p>
                             </div>
-                            
-                            {!isSessionEnded && (
+
+                            <div className="flex items-center gap-2">
                                 <button
-                                    onClick={() => setShowEndModal(true)}
-                                    className="px-4 py-2 rounded-xl text-[13px] font-semibold text-[#4A4A68] bg-white/50 border border-[#E2DFD8] hover:bg-[#EF4444]/10 hover:border-[#EF4444]/30 hover:text-[#EF4444] transition-all"
+                                    type="button"
+                                    onClick={() => setIsCanvasCollapsed((prev) => !prev)}
+                                    className="h-9 w-9 rounded-lg border border-[#E2DFD8] bg-white/70 text-[#4A4A68] hover:bg-[#F7F6F2] transition flex items-center justify-center"
+                                    title={isCanvasCollapsed ? "Expand drawing panel" : "Collapse drawing panel"}
                                 >
-                                    End Session
+                                    {isCanvasCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
                                 </button>
-                            )}
+
+                                {!isSessionEnded && (
+                                    <button
+                                        onClick={() => setShowEndModal(true)}
+                                        className="px-4 py-2 rounded-xl text-[13px] font-semibold text-[#4A4A68] bg-white/50 border border-[#E2DFD8] hover:bg-[#EF4444]/10 hover:border-[#EF4444]/30 hover:text-[#EF4444] transition-all"
+                                    >
+                                        End Session
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         {/* Messages Area */}
@@ -964,9 +1012,10 @@ export default function SessionPage() {
                                         </div>
                                     )}
                                     <input
+                                        ref={composerInputRef}
                                         type="text"
-                                        value={inputValue}
-                                        onChange={(e) => setInputValue(e.target.value)}
+                                        onChange={handleComposerChange}
+                                        onPaste={handleComposerPaste}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') sendMessage()
                                         }}
@@ -990,7 +1039,7 @@ export default function SessionPage() {
                                     </button>
                                     <button
                                         onClick={sendMessage}
-                                        disabled={!inputValue.trim() || isStreaming}
+                                        disabled={!hasInput || isStreaming}
                                         className="flex h-[50px] w-[50px] items-center justify-center rounded-full text-white shadow-md transition-transform hover:scale-[1.05] active:scale-[0.95] cursor-pointer disabled:opacity-50 disabled:hover:scale-100"
                                         style={{ background: "linear-gradient(135deg, #00897B 0%, #00695C 100%)" }}
                                     >
@@ -1004,7 +1053,8 @@ export default function SessionPage() {
                 </div>
 
                 {/* Middle Partition - Drawing Canvas Placeholder */}
-                <div className="lg:basis-[33%] lg:max-w-[33%] rounded-3xl bg-white/65 backdrop-blur-md shadow-sm border border-[#E2DFD8] p-4 flex flex-col min-h-0">
+                {!isCanvasCollapsed && (
+                <div className="lg:basis-[33%] lg:max-w-[33%] rounded-3xl bg-white/65 backdrop-blur-md shadow-sm border border-[#E2DFD8] p-4 flex flex-col min-h-0 transition-all duration-300">
                     <div className="flex items-center justify-between mb-3 px-1">
                         <h2 className="text-[15px] font-semibold text-[#1A1A2E]">Teach With Drawing</h2>
                         <span className="text-[11px] text-[#9898AA]">Canvas</span>
@@ -1134,6 +1184,7 @@ export default function SessionPage() {
                         </button>
                     </div>
                 </div>
+                )}
 
                 {/* Right Partition */}
                 <div className="lg:basis-[25%] lg:max-w-[25%] flex flex-col gap-4">

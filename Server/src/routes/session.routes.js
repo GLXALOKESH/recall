@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { createSession, initSession, deleteSession, getSession, endSession, generateReport } from '../controllers/session.controller.js';
+import { createSession, initSession, deleteSession, getSession, endSession, generateReport, recordPasteEvent } from '../controllers/session.controller.js';
 import { streamChat } from '../controllers/chat.controller.js';
 
 const router = express.Router();
@@ -17,6 +17,9 @@ router.get('/:id', getSession);
 
 // Streaming AI Chat Endpoint
 router.post('/:id/chat', streamChat);
+
+// Track paste events in the session input field
+router.post('/:id/paste', recordPasteEvent);
 
 // Delete a session locally by ID
 router.delete('/:id', deleteSession);

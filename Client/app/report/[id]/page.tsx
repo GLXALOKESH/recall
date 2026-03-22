@@ -214,7 +214,7 @@ export default function ReportPage() {
                         whileInView={{ opacity: 1 }}
                         viewport={{ once: true }}
                         transition={{ delay: 1.2, duration: 1 }}
-                        className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
+                        className="mt-10 flex flex-col items-center gap-2"
                     >
                         <span className="text-[11px] font-medium text-[#9898AA] uppercase tracking-widest">Scroll to explore</span>
                         <ChevronDown className="text-[#9898AA] animate-bounce" size={16} />
@@ -270,7 +270,22 @@ export default function ReportPage() {
                                 <div className="text-[11px] font-bold text-[#9898AA] uppercase tracking-wider mb-1">Explanations</div>
                                 <div className="text-[20px] font-bold text-[#1A1A2E]">{session.messages.filter((m: any) => m.role === 'user').length}</div>
                             </div>
+                            <div className={`bg-white/50 backdrop-blur-md p-5 rounded-3xl border shadow-sm ${session.pasteCount > 0 ? "border-[#F59E0B]/40" : "border-white/60"}`}>
+                                <div className="text-[11px] font-bold text-[#9898AA] uppercase tracking-wider mb-1">Paste Events</div>
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="text-[20px] font-bold text-[#1A1A2E]">{session.pasteCount || 0}</div>
+                                    <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full ${session.pasteCount > 0 ? "bg-[#FEF3C7] text-[#B45309]" : "bg-[#E8F8F4] text-[#00695C]"}`}>
+                                        {session.pasteCount > 0 ? "Flagged" : "Clean"}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
+
+                        {report?.paste_behavior?.note && (
+                            <div className="rounded-2xl border border-[#F59E0B]/30 bg-[#FEF3C7]/70 p-4 text-[13px] text-[#B45309]">
+                                {report.paste_behavior.note}
+                            </div>
+                        )}
                     </div>
                 </section>
 
@@ -456,7 +471,7 @@ export default function ReportPage() {
                     <h2 className="text-[36px] font-bold leading-none">{session.topic}</h2>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6 mb-12">
+                <div className="grid grid-cols-3 gap-6 mb-12">
                     <div className="bg-white/60 border border-white p-6 rounded-3xl">
                         <p className="text-[11px] font-bold uppercase tracking-widest text-[#9898AA] mb-2">Explanations</p>
                         <p className="text-[24px] font-bold">{session.messages.filter((m: any) => m.role === 'user').length}</p>
@@ -464,6 +479,10 @@ export default function ReportPage() {
                     <div className="bg-white/60 border border-white p-6 rounded-3xl">
                         <p className="text-[11px] font-bold uppercase tracking-widest text-[#9898AA] mb-2">Duration</p>
                         <p className="text-[24px] font-bold">{session.durationMinutes}m</p>
+                    </div>
+                    <div className="bg-white/60 border border-white p-6 rounded-3xl">
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-[#9898AA] mb-2">Paste Events</p>
+                        <p className="text-[24px] font-bold">{session.pasteCount || 0}</p>
                     </div>
                 </div>
 
