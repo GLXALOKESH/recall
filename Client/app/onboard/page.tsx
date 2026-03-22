@@ -3,9 +3,11 @@
 import { cn } from "@/lib/utils"
 import { InteractiveGridPattern } from "@/components/ui/interactive-grid-pattern"
 import { OrbitingCircles } from "@/components/ui/orbiting-circles"
-import { Brain, BookOpen, Sparkles, Lightbulb, Pencil, Loader2 } from "lucide-react"
-import { useState, useEffect } from "react"
+import { Brain, BookOpen, Sparkles, Lightbulb, Pencil, Loader2, FileText, X } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
+import { useUser } from "@clerk/nextjs"
+import { BACKEND_URL } from "@/lib/config"
 
 const LOADING_MESSAGES = [
     "Understanding your topic...",
@@ -15,10 +17,43 @@ const LOADING_MESSAGES = [
 
 const Onboard = () => {
     const router = useRouter()
+    const { user } = useUser()
     const [topic, setTopic] = useState("")
     const [isShaking, setIsShaking] = useState(false)
     const [status, setStatus] = useState<"idle" | "loading" | "error">("idle")
     const [messageIndex, setMessageIndex] = useState(0)
+
+    // File Attachment State
+    const [isAttachmentFlipped, setIsAttachmentFlipped] = useState(false)
+    const [attachedFile, setAttachedFile] = useState<File | null>(null)
+    const [sourceUrl, setSourceUrl] = useState("")
+    const [isUrlModalOpen, setIsUrlModalOpen] = useState(false)
+    const [urlInput, setUrlInput] = useState("")
+    const [urlError, setUrlError] = useState("")
+    const pdfInputRef = useRef<HTMLInputElement>(null)
+    const txtInputRef = useRef<HTMLInputElement>(null)
+
+    const isValidYouTubeUrl = (value: string) => {
+        try {
+            const parsed = new URL(value.trim())
+            const host = parsed.hostname.toLowerCase()
+            const allowedHosts = ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "www.youtu.be"]
+            if (!allowedHosts.includes(host)) return false
+
+            if (host.includes("youtu.be")) {
+                return parsed.pathname.length > 1
+            }
+
+            const path = parsed.pathname.toLowerCase()
+            if (path === "/watch") {
+                return Boolean(parsed.searchParams.get("v"))
+            }
+
+            return path.startsWith("/shorts/") || path.startsWith("/embed/") || path.startsWith("/live/")
+        } catch {
+            return false
+        }
+    }
 
     useEffect(() => {
         if (status !== "loading") return
@@ -29,7 +64,7 @@ const Onboard = () => {
     }, [status])
 
     const handleStart = async () => {
-        if (!topic.trim()) {
+        if (!topic.trim() || !user) {
             setIsShaking(true)
             setTimeout(() => setIsShaking(false), 500) // Reset shake after animation
             setStatus("idle")
@@ -40,12 +75,39 @@ const Onboard = () => {
         setMessageIndex(0)
 
         try {
-            // Simulated API call (replace with real fetch later)
-            await new Promise((resolve) => setTimeout(resolve, 4000))
+            const formData = new FormData()
+            formData.append("topic", topic)
+            formData.append("user_id", user.id)
             
-            // Navigate on success
-            router.push(`/sessions/new`) // Update destination as needed
+            // Pass primary user info to allow backend lazy-creation if webhook was missed
+            if (user.primaryEmailAddress) formData.append("email", user.primaryEmailAddress.emailAddress)
+            if (user.firstName) formData.append("firstName", user.firstName)
+            if (user.lastName) formData.append("lastName", user.lastName)
+            if (user.imageUrl) formData.append("imageUrl", user.imageUrl)
+            
+            if (attachedFile) {
+                formData.append("file", attachedFile)
+            }
+            if (sourceUrl) {
+                formData.append("source_url", sourceUrl)
+            }
+
+            const response = await fetch(`${BACKEND_URL}/api/sessions/init`, {
+                method: "POST",
+                body: formData,
+            })
+
+            const data = await response.json()
+
+            if (!response.ok) {
+                console.error("Failed to initialize session:", data)
+                throw new Error(data.message || "Failed to initialize session")
+            }
+            
+            // Navigate to the precise session page
+            router.push(`/session/${data.data.sessionId}`) 
         } catch (error) {
+            console.error("Initialization error:", error)
             setStatus("error")
         }
     }
@@ -217,32 +279,124 @@ const Onboard = () => {
                                     )}
                                 </div>
 
-                                {/* Add source material — centered */}
-                                <button
-                                    className="mx-auto flex items-center gap-2 rounded-xl px-4 py-2.5 transition"
-                                    style={{
-                                        fontFamily: "var(--font-ui, 'DM Sans', sans-serif)",
-                                        fontSize: "13px",
-                                        fontWeight: 500,
-                                        border: "1.5px dashed #C8C5BC",
-                                        color: "#4A4A68",
-                                        background: "transparent",
-                                    }}
-                                    onMouseEnter={e => {
-                                        e.currentTarget.style.borderColor = "#00897B"
-                                        e.currentTarget.style.color = "#00695C"
-                                        e.currentTarget.style.background = "rgba(0,137,123,0.06)"
-                                    }}
-                                    onMouseLeave={e => {
-                                        e.currentTarget.style.borderColor = "#C8C5BC"
-                                        e.currentTarget.style.color = "#4A4A68"
-                                        e.currentTarget.style.background = "transparent"
-                                    }}
-                                >
-                                    <span style={{ fontSize: "16px", lineHeight: 1 }}>⊕</span>
-                                    Add source material{" "}
-                                    <span style={{ color: "#9898AA" }}>(optional)</span>
-                                </button>
+                                {/* Add source material — centered with 3D Flip */}
+                                <div className="mx-auto h-[44px] w-[280px] relative perspective-[1000px]">
+                                    <div 
+                                        className={cn(
+                                            "relative w-full h-full transition-transform duration-500 transform-3d",
+                                            isAttachmentFlipped ? "transform-[rotateX(180deg)]" : ""
+                                        )}
+                                    >
+                                        {/* FRONT FACE (Initial Button or Selected File) */}
+                                        <div className="absolute inset-0 backface-hidden">
+                                            <button
+                                                onClick={() => setIsAttachmentFlipped(true)}
+                                                className={cn(
+                                                    "w-full h-full flex items-center justify-center gap-2 rounded-xl border outline-none transition-colors",
+                                                    (attachedFile || sourceUrl)
+                                                    ? "border-[#00897B] bg-[#E8F8F4] text-[#00695C] border-solid" 
+                                                    : "border-dashed border-[#C8C5BC] text-[#4A4A68] hover:border-[#00897B] hover:text-[#00695C] hover:bg-[#00897B]/5"
+                                                )}
+                                                style={{ fontFamily: "var(--font-ui, 'DM Sans', sans-serif)" }}
+                                            >
+                                                {(attachedFile || sourceUrl) ? (
+                                                    <div className="flex w-full items-center justify-between px-3">
+                                                        <div className="flex items-center gap-2 overflow-hidden max-w-[85%]">
+                                                            <FileText size={16} className="shrink-0 text-[#00897B]" />
+                                                            <span className="font-medium text-[13px] truncate">{attachedFile ? attachedFile.name : sourceUrl}</span>
+                                                        </div>
+                                                        <div 
+                                                            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#00695C] hover:bg-[#00897B]/15 transition-colors"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setAttachedFile(null);
+                                                                setSourceUrl("");
+                                                                if (pdfInputRef.current) pdfInputRef.current.value = "";
+                                                                if (txtInputRef.current) txtInputRef.current.value = "";
+                                                            }}
+                                                        >
+                                                            <X size={14} strokeWidth={2.5}/>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <span style={{ fontSize: "16px", lineHeight: 1 }}>⊕</span>
+                                                        <span className="font-medium text-[13px]">Add source material</span>
+                                                        <span className="text-[#9898AA] font-medium text-[13px]">(optional)</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+
+                                        {/* BACK FACE (Options: PDF, TXT, Cross) */}
+                                        <div className="absolute inset-0 backface-hidden transform-[rotateX(180deg)] flex items-center gap-2 justify-between">
+                                            <button 
+                                                onClick={() => pdfInputRef.current?.click()}
+                                                className="flex-1 h-full rounded-xl border border-[#E2DFD8] bg-white flex items-center justify-center gap-1 text-[#4A4A68] hover:border-[#00897B] hover:text-[#00897B] transition-colors shadow-sm"
+                                            >
+                                                <FileText size={14} /> <span className="text-[13px] font-medium">PDF</span>
+                                            </button>
+                                            
+                                            <button 
+                                                onClick={() => txtInputRef.current?.click()}
+                                                className="flex-1 h-full rounded-xl border border-[#E2DFD8] bg-white flex items-center justify-center gap-1 text-[#4A4A68] hover:border-[#00897B] hover:text-[#00897B] transition-colors shadow-sm"
+                                            >
+                                                <FileText size={14} /> <span className="text-[13px] font-medium">TXT</span>
+                                            </button>
+
+                                            <button 
+                                                onClick={() => {
+                                                    setUrlInput(sourceUrl)
+                                                    setUrlError("")
+                                                    setIsUrlModalOpen(true)
+                                                }}
+                                                className="flex-1 h-full rounded-xl border border-[#E2DFD8] bg-white flex items-center justify-center gap-1 text-[#4A4A68] hover:border-[#00897B] hover:text-[#00897B] transition-colors shadow-sm"
+                                            >
+                                                <BookOpen size={14} /> <span className="text-[13px] font-medium">URL</span>
+                                            </button>
+                                            
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setIsAttachmentFlipped(false);
+                                                }}
+                                                className="w-[44px] shrink-0 h-full rounded-xl border border-[#E2DFD8] bg-[#F7F6F2] flex items-center justify-center text-[#9898AA] hover:text-[#EF4444] hover:bg-[#FEE2E2] hover:border-[#EF4444]/30 transition-colors shadow-sm"
+                                            >
+                                                <X size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Hidden File Inputs */}
+                                    <input 
+                                        type="file" 
+                                        accept=".pdf" 
+                                        className="hidden" 
+                                        ref={pdfInputRef} 
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                setAttachedFile(file);
+                                                setSourceUrl("");
+                                                setIsAttachmentFlipped(false);
+                                            }
+                                        }}
+                                    />
+                                    <input 
+                                        type="file" 
+                                        accept=".txt" 
+                                        className="hidden" 
+                                        ref={txtInputRef} 
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) {
+                                                setAttachedFile(file);
+                                                setSourceUrl("");
+                                                setIsAttachmentFlipped(false);
+                                            }
+                                        }}
+                                    />
+                                </div>
 
                                 {/* API Error Message */}
                                 {status === "error" && (
@@ -377,6 +531,67 @@ const Onboard = () => {
                     </div>
                 </div>
             </div>
+
+            {isUrlModalOpen && (
+                <div className="fixed inset-0 z-100 flex items-center justify-center p-6 bg-black/20 backdrop-blur-[2px] animate-in fade-in duration-200">
+                    <div className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-2xl border border-[#E2DFD8]">
+                        <h3 className="text-[18px] font-semibold text-[#1A1A2E]">Add YouTube URL</h3>
+                        <p className="mt-1 text-[13px] text-[#4A4A68]">
+                            Paste a YouTube video URL. We will fetch transcript/text and use it as source material.
+                        </p>
+
+                        <input
+                            type="url"
+                            value={urlInput}
+                            onChange={(e) => {
+                                setUrlInput(e.target.value)
+                                if (urlError) setUrlError("")
+                            }}
+                            placeholder="https://www.youtube.com/watch?v=..."
+                            className="mt-4 w-full rounded-xl border border-[#E2DFD8] bg-[#F0EEE9] px-4 py-3 text-[14px] text-[#1A1A2E] outline-none focus:border-[#00897B]"
+                        />
+
+                        {urlError && (
+                            <p className="mt-2 text-[12px] text-[#EF4444]">{urlError}</p>
+                        )}
+
+                        <div className="mt-5 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsUrlModalOpen(false)
+                                    setUrlError("")
+                                }}
+                                className="rounded-xl border border-[#E2DFD8] bg-white px-4 py-2 text-[13px] font-medium text-[#4A4A68] hover:bg-[#F7F6F2]"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const candidate = urlInput.trim()
+                                    if (!isValidYouTubeUrl(candidate)) {
+                                        setUrlError("Please enter a valid YouTube video URL.")
+                                        return
+                                    }
+
+                                    setSourceUrl(candidate)
+                                    setAttachedFile(null)
+                                    if (pdfInputRef.current) pdfInputRef.current.value = ""
+                                    if (txtInputRef.current) txtInputRef.current.value = ""
+                                    setIsAttachmentFlipped(false)
+                                    setIsUrlModalOpen(false)
+                                    setUrlError("")
+                                }}
+                                className="rounded-xl px-4 py-2 text-[13px] font-semibold text-white"
+                                style={{ background: "linear-gradient(135deg, #00897B 0%, #00695C 100%)" }}
+                            >
+                                Use URL
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

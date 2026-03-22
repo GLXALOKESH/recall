@@ -3,11 +3,15 @@ import cors from 'cors';
 import webhookRoutes from './routes/webhook.routes.js';
 import userRoutes from './routes/user.routes.js';
 import sessionRoutes from './routes/session.routes.js';
+import { startSessionCleanupJob } from './jobs/sessionCleanup.js';
 
 const app = express();
 
 // Webhook routes must be mounted before express.json() to preserve raw body for Svix verification
 app.use('/api/webhooks', webhookRoutes);
+
+// Start background jobs
+startSessionCleanupJob();
 
 // Middlewares
 app.use(cors());
