@@ -1,6 +1,8 @@
 import Session from '../models/Session.js';
 import { call_llama_70b } from '../utils/groq.js';
 import mongoose from 'mongoose';
+import { synthesizeMiaSpeech } from '../utils/tts.js';
+import { describe_drawing_from_data_url } from '../utils/gemini.js';
 
 // --- Build Mia's Giant Prompt ---
 function buildSystemPrompt({ topic, concepts, currentConcept, coveredConcepts, misconception, misconceptionTriggered }) {
@@ -99,10 +101,10 @@ function parseResponse(rawResponse) {
 export const streamChat = async (req, res) => {
     try {
         const { id } = req.params; // sessionId
-        const { message } = req.body;
+        const { message, drawing_image } = req.body;
 
-        if (!message) {
-            return res.status(400).json({ success: false, message: "Message is required." });
+        if (!message && !drawing_image) {
+            return res.status(400).json({ success: false, message: "Message or drawing is required." });
         }
 
         const session = await Session.findOne({ sessionId: id });
@@ -110,10 +112,12 @@ export const streamChat = async (req, res) => {
             return res.status(404).json({ success: false, message: "Session not found." });
         }
 
+        const userMessage = message?.trim() || "I shared a drawing for this topic.";
+
         // 1. Save user message to the session array and update last activity timestamp
         session.messages.push({
             role: "user",
-            clean_text: message
+            clean_text: userMessage
         });
         session.lastMessageAt = new Date();
 
@@ -144,6 +148,20 @@ export const streamChat = async (req, res) => {
                 content: m.clean_text
             }))
         ];
+
+        if (drawing_image) {
+            try {
+                const drawingSummary = await describe_drawing_from_data_url(drawing_image, session.topic);
+                if (drawingSummary) {
+                    chatHistory.push({
+                        role: "user",
+                        content: `Additional context from my drawing:\n${drawingSummary}`,
+                    });
+                }
+            } catch (drawingError) {
+                console.error("Failed to analyze drawing image:", drawingError);
+            }
+        }
 
         // 3. Initiate Streaming Call to Groq
         // Note: For SSE (Server-Sent Events) we would use res.write().
@@ -224,8 +242,21 @@ export const streamChat = async (req, res) => {
         // Save session frequently (every message here, or optimize if needed)
         await session.save();
 
+        let ttsAudio = null;
+        try {
+            ttsAudio = await synthesizeMiaSpeech(cleanText);
+        } catch (ttsError) {
+            console.error('TTS generation failed:', ttsError);
+        }
+
         // End the stream and append a final chunk with the JSON metadata payload and completion flag
-        res.write(`data: ${JSON.stringify({ done: true, metadata, session_complete: autoCompleted })}\n\n`);
+        res.write(`data: ${JSON.stringify({
+            done: true,
+            metadata,
+            session_complete: autoCompleted,
+            audio_base64: ttsAudio?.data || null,
+            audio_mime_type: ttsAudio?.mimeType || null
+        })}\n\n`);
         res.end();
 
     } catch (error) {

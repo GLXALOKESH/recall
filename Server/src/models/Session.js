@@ -60,6 +60,18 @@ const sessionSchema = new mongoose.Schema(
             type: String,
             default: '0m',
         },
+        durationMinutes: {
+            type: Number,
+            default: 0,
+        },
+        report: {
+            type: mongoose.Schema.Types.Mixed,
+            default: null,
+        },
+        overallScore: {
+            type: Number,
+            default: 0,
+        },
         concepts: [
             {
                 type: String,

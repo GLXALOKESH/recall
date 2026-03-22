@@ -7,6 +7,7 @@ import { Brain, BookOpen, Sparkles, Lightbulb, Pencil, Loader2, FileText, X } fr
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useUser } from "@clerk/nextjs"
+import { BACKEND_URL } from "@/lib/config"
 
 const LOADING_MESSAGES = [
     "Understanding your topic...",
@@ -25,8 +26,34 @@ const Onboard = () => {
     // File Attachment State
     const [isAttachmentFlipped, setIsAttachmentFlipped] = useState(false)
     const [attachedFile, setAttachedFile] = useState<File | null>(null)
+    const [sourceUrl, setSourceUrl] = useState("")
+    const [isUrlModalOpen, setIsUrlModalOpen] = useState(false)
+    const [urlInput, setUrlInput] = useState("")
+    const [urlError, setUrlError] = useState("")
     const pdfInputRef = useRef<HTMLInputElement>(null)
     const txtInputRef = useRef<HTMLInputElement>(null)
+
+    const isValidYouTubeUrl = (value: string) => {
+        try {
+            const parsed = new URL(value.trim())
+            const host = parsed.hostname.toLowerCase()
+            const allowedHosts = ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "www.youtu.be"]
+            if (!allowedHosts.includes(host)) return false
+
+            if (host.includes("youtu.be")) {
+                return parsed.pathname.length > 1
+            }
+
+            const path = parsed.pathname.toLowerCase()
+            if (path === "/watch") {
+                return Boolean(parsed.searchParams.get("v"))
+            }
+
+            return path.startsWith("/shorts/") || path.startsWith("/embed/") || path.startsWith("/live/")
+        } catch {
+            return false
+        }
+    }
 
     useEffect(() => {
         if (status !== "loading") return
@@ -61,8 +88,11 @@ const Onboard = () => {
             if (attachedFile) {
                 formData.append("file", attachedFile)
             }
+            if (sourceUrl) {
+                formData.append("source_url", sourceUrl)
+            }
 
-            const response = await fetch("http://localhost:5000/api/sessions/init", {
+            const response = await fetch(`${BACKEND_URL}/api/sessions/init`, {
                 method: "POST",
                 body: formData,
             })
@@ -263,23 +293,24 @@ const Onboard = () => {
                                                 onClick={() => setIsAttachmentFlipped(true)}
                                                 className={cn(
                                                     "w-full h-full flex items-center justify-center gap-2 rounded-xl border outline-none transition-colors",
-                                                    attachedFile 
+                                                    (attachedFile || sourceUrl)
                                                     ? "border-[#00897B] bg-[#E8F8F4] text-[#00695C] border-solid" 
                                                     : "border-dashed border-[#C8C5BC] text-[#4A4A68] hover:border-[#00897B] hover:text-[#00695C] hover:bg-[#00897B]/5"
                                                 )}
                                                 style={{ fontFamily: "var(--font-ui, 'DM Sans', sans-serif)" }}
                                             >
-                                                {attachedFile ? (
+                                                {(attachedFile || sourceUrl) ? (
                                                     <div className="flex w-full items-center justify-between px-3">
                                                         <div className="flex items-center gap-2 overflow-hidden max-w-[85%]">
                                                             <FileText size={16} className="shrink-0 text-[#00897B]" />
-                                                            <span className="font-medium text-[13px] truncate">{attachedFile.name}</span>
+                                                            <span className="font-medium text-[13px] truncate">{attachedFile ? attachedFile.name : sourceUrl}</span>
                                                         </div>
                                                         <div 
                                                             className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#00695C] hover:bg-[#00897B]/15 transition-colors"
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 setAttachedFile(null);
+                                                                setSourceUrl("");
                                                                 if (pdfInputRef.current) pdfInputRef.current.value = "";
                                                                 if (txtInputRef.current) txtInputRef.current.value = "";
                                                             }}
@@ -301,16 +332,27 @@ const Onboard = () => {
                                         <div className="absolute inset-0 backface-hidden transform-[rotateX(180deg)] flex items-center gap-2 justify-between">
                                             <button 
                                                 onClick={() => pdfInputRef.current?.click()}
-                                                className="flex-1 h-full rounded-xl border border-[#E2DFD8] bg-white flex items-center justify-center gap-2 text-[#4A4A68] hover:border-[#00897B] hover:text-[#00897B] transition-colors shadow-sm"
+                                                className="flex-1 h-full rounded-xl border border-[#E2DFD8] bg-white flex items-center justify-center gap-1 text-[#4A4A68] hover:border-[#00897B] hover:text-[#00897B] transition-colors shadow-sm"
                                             >
                                                 <FileText size={14} /> <span className="text-[13px] font-medium">PDF</span>
                                             </button>
                                             
                                             <button 
                                                 onClick={() => txtInputRef.current?.click()}
-                                                className="flex-1 h-full rounded-xl border border-[#E2DFD8] bg-white flex items-center justify-center gap-2 text-[#4A4A68] hover:border-[#00897B] hover:text-[#00897B] transition-colors shadow-sm"
+                                                className="flex-1 h-full rounded-xl border border-[#E2DFD8] bg-white flex items-center justify-center gap-1 text-[#4A4A68] hover:border-[#00897B] hover:text-[#00897B] transition-colors shadow-sm"
                                             >
                                                 <FileText size={14} /> <span className="text-[13px] font-medium">TXT</span>
+                                            </button>
+
+                                            <button 
+                                                onClick={() => {
+                                                    setUrlInput(sourceUrl)
+                                                    setUrlError("")
+                                                    setIsUrlModalOpen(true)
+                                                }}
+                                                className="flex-1 h-full rounded-xl border border-[#E2DFD8] bg-white flex items-center justify-center gap-1 text-[#4A4A68] hover:border-[#00897B] hover:text-[#00897B] transition-colors shadow-sm"
+                                            >
+                                                <BookOpen size={14} /> <span className="text-[13px] font-medium">URL</span>
                                             </button>
                                             
                                             <button 
@@ -335,6 +377,7 @@ const Onboard = () => {
                                             const file = e.target.files?.[0];
                                             if (file) {
                                                 setAttachedFile(file);
+                                                setSourceUrl("");
                                                 setIsAttachmentFlipped(false);
                                             }
                                         }}
@@ -348,6 +391,7 @@ const Onboard = () => {
                                             const file = e.target.files?.[0];
                                             if (file) {
                                                 setAttachedFile(file);
+                                                setSourceUrl("");
                                                 setIsAttachmentFlipped(false);
                                             }
                                         }}
@@ -487,6 +531,67 @@ const Onboard = () => {
                     </div>
                 </div>
             </div>
+
+            {isUrlModalOpen && (
+                <div className="fixed inset-0 z-100 flex items-center justify-center p-6 bg-black/20 backdrop-blur-[2px] animate-in fade-in duration-200">
+                    <div className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-2xl border border-[#E2DFD8]">
+                        <h3 className="text-[18px] font-semibold text-[#1A1A2E]">Add YouTube URL</h3>
+                        <p className="mt-1 text-[13px] text-[#4A4A68]">
+                            Paste a YouTube video URL. We will fetch transcript/text and use it as source material.
+                        </p>
+
+                        <input
+                            type="url"
+                            value={urlInput}
+                            onChange={(e) => {
+                                setUrlInput(e.target.value)
+                                if (urlError) setUrlError("")
+                            }}
+                            placeholder="https://www.youtube.com/watch?v=..."
+                            className="mt-4 w-full rounded-xl border border-[#E2DFD8] bg-[#F0EEE9] px-4 py-3 text-[14px] text-[#1A1A2E] outline-none focus:border-[#00897B]"
+                        />
+
+                        {urlError && (
+                            <p className="mt-2 text-[12px] text-[#EF4444]">{urlError}</p>
+                        )}
+
+                        <div className="mt-5 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsUrlModalOpen(false)
+                                    setUrlError("")
+                                }}
+                                className="rounded-xl border border-[#E2DFD8] bg-white px-4 py-2 text-[13px] font-medium text-[#4A4A68] hover:bg-[#F7F6F2]"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const candidate = urlInput.trim()
+                                    if (!isValidYouTubeUrl(candidate)) {
+                                        setUrlError("Please enter a valid YouTube video URL.")
+                                        return
+                                    }
+
+                                    setSourceUrl(candidate)
+                                    setAttachedFile(null)
+                                    if (pdfInputRef.current) pdfInputRef.current.value = ""
+                                    if (txtInputRef.current) txtInputRef.current.value = ""
+                                    setIsAttachmentFlipped(false)
+                                    setIsUrlModalOpen(false)
+                                    setUrlError("")
+                                }}
+                                className="rounded-xl px-4 py-2 text-[13px] font-semibold text-white"
+                                style={{ background: "linear-gradient(135deg, #00897B 0%, #00695C 100%)" }}
+                            >
+                                Use URL
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

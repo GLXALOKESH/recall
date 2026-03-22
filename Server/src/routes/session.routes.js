@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { createSession, initSession, deleteSession, getSession, endSession } from '../controllers/session.controller.js';
+import { createSession, initSession, deleteSession, getSession, endSession, generateReport } from '../controllers/session.controller.js';
 import { streamChat } from '../controllers/chat.controller.js';
 
 const router = express.Router();
@@ -23,5 +23,8 @@ router.delete('/:id', deleteSession);
 
 // End a session explicitly
 router.post('/:id/end', endSession);
+
+// Generate / Get Mastery Report
+router.post('/:id/report', generateReport);
 
 export default router;

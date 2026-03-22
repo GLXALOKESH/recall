@@ -4,6 +4,7 @@ import Link from "next/link"
 import { ArrowRight, Brain, Clock, Plus, Loader2 } from "lucide-react"
 import { useUser } from "@clerk/nextjs"
 import { useEffect, useState } from "react"
+import { BACKEND_URL } from "@/lib/config"
 
 // Removed dummy MOCK_SESSIONS
 
@@ -28,11 +29,10 @@ export default function SessionsPage() {
             }
 
             try {
-                // Fetch directly from the locally running Express backend.
-                // Note: The port should match the backend server, typically 5000.
-                const response = await fetch(`http://localhost:5000/api/users/${user.id}/sessions`);
+                // Fetch directly from the backend server.
+                const response = await fetch(`${BACKEND_URL}/api/users/${user.id}/sessions`);
                 const result = await response.json();
-                
+
                 if (result.success) {
                     setSessions(result.data);
                 }
@@ -49,7 +49,7 @@ export default function SessionsPage() {
     return (
         <div className="min-h-screen bg-[#F5F3EE] px-6 py-28" style={{ fontFamily: "var(--font-ui, 'DM Sans', sans-serif)" }}>
             <div className="mx-auto max-w-5xl">
-                
+
                 {/* Header */}
                 <div className="mb-12 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
                     <div>
@@ -69,7 +69,7 @@ export default function SessionsPage() {
                             Review past teaching sessions and mastery reports.
                         </p>
                     </div>
-                    
+
                     <Link href="/onboard">
                         <button
                             className="flex items-center gap-2 rounded-2xl px-6 py-3 text-white transition active:scale-[0.98] shadow-md"
@@ -95,13 +95,13 @@ export default function SessionsPage() {
                     <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
                         {sessions.map((session) => {
                             const style = getScoreStyles(session.score)
-                            
+
                             // Formatting the MongoDB date
                             const dateObj = new Date(session.createdAt)
                             const dateStr = dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                            
+
                             return (
-                                <Link href={`/report/${session._id}`} key={session._id}>
+                                <Link href={`/report/${session.sessionId || session._id}`} key={session.sessionId || session._id}>
                                     <div
                                         className="group relative flex h-full flex-col justify-between overflow-hidden rounded-2xl bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
                                         style={{ border: "1px solid #E2DFD8", cursor: "pointer" }}

@@ -2,9 +2,27 @@
 
 import { DotPattern } from "@/components/ui/dot-pattern"
 import { useParams } from "next/navigation"
-import { Copy, ThumbsUp, Volume2, Paperclip, Sparkles, Mic, Send, Loader2 } from "lucide-react"
+import { Copy, ThumbsUp, Volume2, Paperclip, Sparkles, Mic, Send, Loader2, X, AlertCircle } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import RadarChart from "@/components/RadarChart"
+import { BACKEND_URL } from "@/lib/config"
+
+type BrowserSpeechRecognition = {
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    onstart?: (() => void) | null;
+    onresult: ((event: any) => void) | null;
+    onerror: ((event: any) => void) | null;
+    onend: (() => void) | null;
+    start: () => void;
+    stop: () => void;
+};
+
+type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+type MiaVisualState = "neutral" | "curious" | "confused" | "satisfied" | "caught";
+type DrawTool = "pen" | "eraser" | "rectangle" | "circle" | "line" | "triangle" | "text";
 
 export default function SessionPage() {
     const params = useParams()
@@ -13,17 +31,458 @@ export default function SessionPage() {
     const [sessionData, setSessionData] = useState<any>(null)
     const [isLoading, setIsLoading] = useState(true)
 
-    // Chat State
     const [messages, setMessages] = useState<any[]>([])
     const [inputValue, setInputValue] = useState("")
     const [isStreaming, setIsStreaming] = useState(false)
+    const [isRecording, setIsRecording] = useState(false)
+    const [speechSupported, setSpeechSupported] = useState(true)
+    const [speechError, setSpeechError] = useState("")
+    const [ttsProvider, setTtsProvider] = useState<"gemini" | "puter">("gemini")
+    const [isPuterReady, setIsPuterReady] = useState(false)
+    const [miaVisualState, setMiaVisualState] = useState<MiaVisualState>("neutral")
+    const [avatarVideoSrc, setAvatarVideoSrc] = useState("/normal.mp4")
+    const [avatarOneShot, setAvatarOneShot] = useState(false)
+    const [avatarPlaybackKey, setAvatarPlaybackKey] = useState(0)
+    const [isSessionEnded, setIsSessionEnded] = useState(false)
+    const [showEndModal, setShowEndModal] = useState(false)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
+    const activeAudioRef = useRef<HTMLAudioElement | null>(null)
+    const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+    const speechInputSeedRef = useRef("")
+    const speechUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const speechAccumulatorRef = useRef({ final: "", interim: "" })
+    const canvasRef = useRef<HTMLCanvasElement | null>(null)
+    const canvasContainerRef = useRef<HTMLDivElement | null>(null)
+    const canvasCtxRef = useRef<CanvasRenderingContext2D | null>(null)
+    const isDrawingRef = useRef(false)
+    const lastPointRef = useRef<{ x: number; y: number } | null>(null)
+    const shapeStartRef = useRef<{ x: number; y: number } | null>(null)
+    const canvasSnapshotRef = useRef<ImageData | null>(null)
+    const [drawTool, setDrawTool] = useState<DrawTool>("pen")
+    const [brushColor, setBrushColor] = useState("#00897B")
+    const [brushSize, setBrushSize] = useState(4)
+    const [shapeText, setShapeText] = useState("")
+    const router = useRouter()
+
+    const setupCanvas = () => {
+        const canvas = canvasRef.current;
+        const container = canvasContainerRef.current;
+        if (!canvas || !container) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.max(200, Math.floor(container.clientWidth));
+        const height = Math.max(220, Math.floor(container.clientHeight));
+
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.fillStyle = "#F7F6F2";
+        ctx.fillRect(0, 0, width, height);
+        canvasCtxRef.current = ctx;
+    };
+
+    const getPointerPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return null;
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+        };
+    };
+
+    const drawShape = (
+        ctx: CanvasRenderingContext2D,
+        tool: DrawTool,
+        start: { x: number; y: number },
+        end: { x: number; y: number }
+    ) => {
+        const width = end.x - start.x;
+        const height = end.y - start.y;
+
+        ctx.strokeStyle = brushColor;
+        ctx.fillStyle = brushColor;
+        ctx.lineWidth = brushSize;
+
+        if (tool === "rectangle") {
+            ctx.strokeRect(start.x, start.y, width, height);
+            return;
+        }
+
+        if (tool === "line") {
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+            return;
+        }
+
+        if (tool === "circle") {
+            const centerX = start.x + width / 2;
+            const centerY = start.y + height / 2;
+            const radiusX = Math.abs(width / 2);
+            const radiusY = Math.abs(height / 2);
+
+            ctx.beginPath();
+            ctx.ellipse(centerX, centerY, Math.max(radiusX, 1), Math.max(radiusY, 1), 0, 0, Math.PI * 2);
+            ctx.stroke();
+            return;
+        }
+
+        if (tool === "triangle") {
+            const leftX = Math.min(start.x, end.x);
+            const rightX = Math.max(start.x, end.x);
+            const topY = Math.min(start.y, end.y);
+            const bottomY = Math.max(start.y, end.y);
+            const midX = (leftX + rightX) / 2;
+
+            ctx.beginPath();
+            ctx.moveTo(midX, topY);
+            ctx.lineTo(leftX, bottomY);
+            ctx.lineTo(rightX, bottomY);
+            ctx.closePath();
+            ctx.stroke();
+        }
+    };
+
+    const startDrawing = (event: React.PointerEvent<HTMLCanvasElement>) => {
+        const ctx = canvasCtxRef.current;
+        const canvas = canvasRef.current;
+        const point = getPointerPoint(event);
+        if (!ctx || !canvas || !point) return;
+
+        if (drawTool === "text") {
+            const text = shapeText.trim();
+            if (!text) {
+                setSpeechError("Type text in the box before placing it on canvas.");
+                return;
+            }
+
+            ctx.fillStyle = brushColor;
+            ctx.font = `${Math.max(12, brushSize * 4)}px 'DM Sans', sans-serif`;
+            ctx.textBaseline = "top";
+            ctx.fillText(text, point.x, point.y);
+            return;
+        }
+
+        setSpeechError("");
+
+        if (drawTool !== "pen" && drawTool !== "eraser") {
+            isDrawingRef.current = true;
+            shapeStartRef.current = point;
+            canvasSnapshotRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            return;
+        }
+
+        isDrawingRef.current = true;
+        lastPointRef.current = point;
+        ctx.strokeStyle = drawTool === "pen" ? brushColor : "#F7F6F2";
+        ctx.lineWidth = brushSize;
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y);
+    };
+
+    const drawLine = (event: React.PointerEvent<HTMLCanvasElement>) => {
+        const ctx = canvasCtxRef.current;
+        const canvas = canvasRef.current;
+        const point = getPointerPoint(event);
+        if (!ctx || !canvas || !point || !isDrawingRef.current) return;
+
+        if (drawTool !== "pen" && drawTool !== "eraser") {
+            const start = shapeStartRef.current;
+            const snapshot = canvasSnapshotRef.current;
+            if (!start || !snapshot) return;
+
+            ctx.putImageData(snapshot, 0, 0);
+            drawShape(ctx, drawTool, start, point);
+            return;
+        }
+
+        const prev = lastPointRef.current;
+        if (!prev) {
+            lastPointRef.current = point;
+            return;
+        }
+
+        ctx.strokeStyle = drawTool === "pen" ? brushColor : "#F7F6F2";
+        ctx.lineWidth = brushSize;
+        ctx.beginPath();
+        ctx.moveTo(prev.x, prev.y);
+        ctx.lineTo(point.x, point.y);
+        ctx.stroke();
+        lastPointRef.current = point;
+    };
+
+    const stopDrawing = (event?: React.PointerEvent<HTMLCanvasElement>) => {
+        const ctx = canvasCtxRef.current;
+        const canvas = canvasRef.current;
+
+        if (
+            event &&
+            ctx &&
+            canvas &&
+            isDrawingRef.current &&
+            drawTool !== "pen" &&
+            drawTool !== "eraser"
+        ) {
+            const start = shapeStartRef.current;
+            const snapshot = canvasSnapshotRef.current;
+            const end = getPointerPoint(event);
+            if (start && snapshot && end) {
+                ctx.putImageData(snapshot, 0, 0);
+                drawShape(ctx, drawTool, start, end);
+            }
+        }
+
+        isDrawingRef.current = false;
+        lastPointRef.current = null;
+        shapeStartRef.current = null;
+        canvasSnapshotRef.current = null;
+    };
+
+    const clearCanvas = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvasCtxRef.current;
+        if (!canvas || !ctx) return;
+        const rect = canvas.getBoundingClientRect();
+        ctx.fillStyle = "#F7F6F2";
+        ctx.fillRect(0, 0, rect.width, rect.height);
+    };
+
+    useEffect(() => {
+        setupCanvas();
+        const onResize = () => setupCanvas();
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+    }, []);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const speechCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        setSpeechSupported(Boolean(speechCtor));
+    }, []);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+
+        const puter = (window as any).puter;
+        if (puter?.ai?.txt2speech) {
+            setIsPuterReady(true);
+            return;
+        }
+
+        const scriptId = "puter-js-sdk";
+        const existing = document.getElementById(scriptId) as HTMLScriptElement | null;
+
+        const onReady = () => {
+            const readyPuter = (window as any).puter;
+            setIsPuterReady(Boolean(readyPuter?.ai?.txt2speech));
+        };
+
+        if (existing) {
+            existing.addEventListener("load", onReady, { once: true });
+            return;
+        }
+
+        const script = document.createElement("script");
+        script.id = scriptId;
+        script.src = "https://js.puter.com/v2/";
+        script.async = true;
+        script.onload = onReady;
+        script.onerror = () => {
+            setIsPuterReady(false);
+            setSpeechError("Puter voice SDK could not load. Gemini voice is still available.");
+            setTtsProvider("gemini");
+        };
+        document.body.appendChild(script);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (activeAudioRef.current) {
+                activeAudioRef.current.pause();
+                activeAudioRef.current = null;
+            }
+            if (speechRecognitionRef.current) {
+                try {
+                    speechRecognitionRef.current.stop();
+                } catch (e) {
+                    console.error("Cleanup error:", e);
+                }
+                speechRecognitionRef.current = null;
+            }
+            if (speechUpdateTimeoutRef.current) {
+                clearTimeout(speechUpdateTimeoutRef.current);
+                speechUpdateTimeoutRef.current = null;
+            }
+        };
+    }, []);
+
+    const startSpeechRecognition = () => {
+        if (isStreaming || isRecording) return;
+
+        const speechCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!speechCtor) {
+            setSpeechSupported(false);
+            setSpeechError("Speech recognition is not supported in this browser.");
+            return;
+        }
+
+        if (speechRecognitionRef.current) {
+            try {
+                speechRecognitionRef.current.stop();
+            } catch (e) {
+                console.error("Error stopping previous recognition:", e);
+            }
+            speechRecognitionRef.current = null;
+        }
+
+        setSpeechError("");
+        setIsRecording(true);
+        speechInputSeedRef.current = inputValue.trim() ? `${inputValue.trim()} ` : "";
+        speechAccumulatorRef.current = { final: "", interim: "" };
+
+        try {
+            const recognition: BrowserSpeechRecognition = new (speechCtor as SpeechRecognitionConstructor)();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = "en-US";
+
+            recognition.onstart = () => {
+                setSpeechError("");
+            };
+
+            recognition.onresult = (event: any) => {
+                speechAccumulatorRef.current = { final: "", interim: "" };
+
+                for (let i = event.resultIndex; i < event.results.length; i += 1) {
+                    const transcript = event.results[i][0]?.transcript || "";
+                    if (event.results[i].isFinal) {
+                        speechAccumulatorRef.current.final += transcript;
+                    } else {
+                        speechAccumulatorRef.current.interim += transcript;
+                    }
+                }
+
+                if (speechUpdateTimeoutRef.current) {
+                    clearTimeout(speechUpdateTimeoutRef.current);
+                }
+
+                speechUpdateTimeoutRef.current = setTimeout(() => {
+                    const { final, interim } = speechAccumulatorRef.current;
+                    const combined = `${speechInputSeedRef.current}${final}${interim}`
+                        .replace(/\s+/g, " ")
+                        .trimStart();
+                    setInputValue(combined);
+                    speechUpdateTimeoutRef.current = null;
+                }, 100);
+            };
+
+            recognition.onerror = (event: any) => {
+                const errorMsg = (() => {
+                    switch (event?.error) {
+                        case "not-allowed":
+                        case "permission-denied":
+                            return "Microphone permission denied. Please allow mic access.";
+                        case "no-speech":
+                            return "No speech detected. Speak clearly and try again.";
+                        case "network":
+                            return "Network error. Check your connection and try again.";
+                        case "audio-capture":
+                            return "No microphone found. Please check your audio input.";
+                        default:
+                            return "Speech recognition error. Please try again.";
+                    }
+                })();
+                setSpeechError(errorMsg);
+                setIsRecording(false);
+            };
+
+            recognition.onend = () => {
+                setIsRecording(false);
+                speechRecognitionRef.current = null;
+                if (speechUpdateTimeoutRef.current) {
+                    clearTimeout(speechUpdateTimeoutRef.current);
+                    speechUpdateTimeoutRef.current = null;
+                }
+                setInputValue((prev) => prev.trim());
+            };
+
+            speechRecognitionRef.current = recognition;
+            setTimeout(() => {
+                try {
+                    recognition.start();
+                } catch (e) {
+                    console.error("Error starting recognition:", e);
+                    setSpeechError("Failed to start speech recognition.");
+                    setIsRecording(false);
+                }
+            }, 0);
+        } catch (e) {
+            console.error("Failed to create recognition:", e);
+            setSpeechError("Speech recognition initialization failed.");
+            setIsRecording(false);
+        }
+    };
+
+    const stopSpeechRecognition = () => {
+        if (!speechRecognitionRef.current) return;
+        try {
+            speechRecognitionRef.current.stop();
+        } catch (e) {
+            console.error("Error stopping recognition:", e);
+        }
+        setIsRecording(false);
+        if (speechUpdateTimeoutRef.current) {
+            clearTimeout(speechUpdateTimeoutRef.current);
+            speechUpdateTimeoutRef.current = null;
+        }
+    };
+
+    const toggleSpeechRecognition = () => {
+        if (isRecording) {
+            stopSpeechRecognition();
+            return;
+        }
+        setTimeout(() => {
+            startSpeechRecognition();
+        }, 0);
+    };
+
+    const triggerAvatarClip = (state: MiaVisualState) => {
+        if (state === "curious") {
+            setAvatarVideoSrc("/curious.mp4");
+            setAvatarOneShot(true);
+            setAvatarPlaybackKey((k) => k + 1);
+            return;
+        }
+
+        if (state === "confused") {
+            setAvatarVideoSrc("/confused.mp4");
+            setAvatarOneShot(true);
+            setAvatarPlaybackKey((k) => k + 1);
+            return;
+        }
+
+        setAvatarVideoSrc("/normal.mp4");
+        setAvatarOneShot(false);
+        setAvatarPlaybackKey((k) => k + 1);
+    };
 
     useEffect(() => {
         if (!id) return;
         const fetchSession = async () => {
             try {
-                const res = await fetch(`http://localhost:5000/api/sessions/${id}`);
+                const res = await fetch(`${BACKEND_URL}/api/sessions/${id}`);
                 const data = await res.json();
                 if (data.success) {
                     setSessionData(data.data);
@@ -54,20 +513,20 @@ export default function SessionPage() {
         }
     }, [messages]);
 
-    const sendMessage = async () => {
-        if (!inputValue.trim() || isStreaming) return;
+    const processChatTurn = async (userMsg: string, drawingImage?: string) => {
+        if (!userMsg.trim() || isStreaming) return;
 
-        const userMsg = inputValue;
-        setInputValue("");
-        setMessages(prev => [...prev, { role: "user", content: userMsg }]);
+        setMiaVisualState("curious");
+        triggerAvatarClip("curious");
+        setMessages(prev => [...prev, { role: "user", content: userMsg, drawingImage: drawingImage || null }]);
         setMessages(prev => [...prev, { role: "assistant", content: "" }]);
         setIsStreaming(true);
 
         try {
-            const response = await fetch(`http://localhost:5000/api/sessions/${id}/chat`, {
+            const response = await fetch(`${BACKEND_URL}/api/sessions/${id}/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: userMsg })
+                body: JSON.stringify({ message: userMsg, drawing_image: drawingImage || null })
             });
 
             if (!response.body) throw new Error("No response body");
@@ -75,50 +534,233 @@ export default function SessionPage() {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let accumulatedContent = "";
+            let sseBuffer = "";
+            let terminalEventSeen = false;
+
+            const finalizeAssistantMessage = (content: string) => {
+                setMessages(prev => {
+                    const newMsgs = [...prev];
+                    newMsgs[newMsgs.length - 1].content = content;
+                    return newMsgs;
+                });
+            };
+
+            const playGeminiAudio = async (audioBase64: string, audioMimeType: string) => {
+                const audioSrc = `data:${audioMimeType};base64,${audioBase64}`;
+
+                if (activeAudioRef.current) {
+                    activeAudioRef.current.pause();
+                    activeAudioRef.current = null;
+                }
+
+                const audio = new Audio(audioSrc);
+                activeAudioRef.current = audio;
+
+                await new Promise<void>((resolve) => {
+                    let resolved = false;
+                    const finish = () => {
+                        if (resolved) return;
+                        resolved = true;
+                        resolve();
+                    };
+
+                    const timeoutId = setTimeout(finish, 800);
+                    const onReady = () => {
+                        clearTimeout(timeoutId);
+                        finish();
+                    };
+
+                    audio.addEventListener("loadeddata", onReady, { once: true });
+                    audio.addEventListener("canplay", onReady, { once: true });
+                    audio.addEventListener("error", onReady, { once: true });
+                });
+
+                try {
+                    await audio.play();
+                    return true;
+                } catch (error) {
+                    console.warn("Gemini audio play failed:", error);
+                    return false;
+                }
+            };
+
+            const playPuterAudio = async (text: string) => {
+                const puter = (window as any).puter;
+                if (!puter?.ai?.txt2speech) {
+                    setSpeechError("Puter voice is not ready yet.");
+                    return false;
+                }
+
+                try {
+                    const puterAudio = await puter.ai.txt2speech(text, {
+                        language: "en-US",
+                        engine: "generative"
+                    });
+
+                    if (!puterAudio || typeof puterAudio.play !== "function") {
+                        return false;
+                    }
+
+                    await puterAudio.play();
+                    return true;
+                } catch (error) {
+                    console.error("Puter audio failed:", error);
+                    setSpeechError("Puter voice failed. Falling back to Gemini.");
+                    return false;
+                }
+            };
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n\n');
+                sseBuffer += decoder.decode(value, { stream: true });
+                const events = sseBuffer.split('\n\n');
+                sseBuffer = events.pop() || "";
 
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6));
-                            if (data.text) {
-                                accumulatedContent += data.text;
-                                setMessages(prev => {
-                                    const newMsgs = [...prev];
-                                    // Strip the <metadata> block visually so the user never sees it stream in!
-                                    const displayContent = accumulatedContent.split('<metadata>')[0].trim();
-                                    newMsgs[newMsgs.length - 1].content = displayContent;
-                                    return newMsgs;
-                                });
-                            }
-                            if (data.done) {
-                                // Final metadata payload 
-                                setSessionData((prev: any) => {
-                                    if (!prev) return prev;
-                                    const newScores = { ...(prev.depthScores || {}) };
-                                    if (data.metadata.concept_covered) {
-                                        const oldScore = newScores[data.metadata.concept_covered] || 0;
-                                        newScores[data.metadata.concept_covered] = Math.max(oldScore, data.metadata.depth_score || 0);
-                                    }
-                                    return { ...prev, depthScores: newScores };
-                                });
-                            }
-                        } catch (e) {
-                            // partial JSON chunk
+                for (const eventBlock of events) {
+                    const dataLine = eventBlock
+                        .split('\n')
+                        .find((line) => line.startsWith('data: '));
+
+                    if (!dataLine) continue;
+
+                    try {
+                        const data = JSON.parse(dataLine.slice(6));
+
+                        if (data.error) {
+                            terminalEventSeen = true;
+                            finalizeAssistantMessage(accumulatedContent.trim() || "Sorry, I could not complete this reply.");
+                            setSpeechError(data.error);
+                            continue;
                         }
+
+                        if (data.text) {
+                            accumulatedContent += data.text;
+                        }
+
+                        if (!data.done) continue;
+                        terminalEventSeen = true;
+
+                        const displayContent = accumulatedContent.split('<metadata>')[0].trim();
+                        if (data.session_complete) {
+                            setIsSessionEnded(true);
+                        }
+
+                        const rawMiaState = data.metadata?.mia_state;
+                        if (rawMiaState === "curious" || rawMiaState === "confused" || rawMiaState === "satisfied" || rawMiaState === "caught") {
+                            setMiaVisualState(rawMiaState);
+                            triggerAvatarClip(rawMiaState);
+                        } else {
+                            setMiaVisualState("neutral");
+                            triggerAvatarClip("neutral");
+                        }
+
+                        let played = false;
+
+                        if (ttsProvider === "puter") {
+                            finalizeAssistantMessage(displayContent);
+                            played = await playPuterAudio(displayContent);
+                            if (!played && data.audio_base64 && data.audio_mime_type) {
+                                played = await playGeminiAudio(data.audio_base64, data.audio_mime_type);
+                            }
+                        } else {
+                            if (data.audio_base64 && data.audio_mime_type) {
+                                played = await playGeminiAudio(data.audio_base64, data.audio_mime_type);
+                            }
+                            finalizeAssistantMessage(displayContent);
+                        }
+
+                        if (!played && ttsProvider === "gemini") {
+                            setSpeechError("Gemini voice was unavailable for this message.");
+                        }
+
+                        setSessionData((prev: any) => {
+                            if (!prev) return prev;
+                            const newScores = { ...(prev.depthScores || {}) };
+                            if (data.metadata?.concept_covered) {
+                                const oldScore = newScores[data.metadata.concept_covered] || 0;
+                                newScores[data.metadata.concept_covered] = Math.max(oldScore, data.metadata.depth_score || 0);
+                            }
+                            return { ...prev, depthScores: newScores };
+                        });
+                    } catch (e) {
+                        console.error("Failed to parse SSE data:", e);
                     }
                 }
             }
+
+            if (!terminalEventSeen) {
+                const displayContent = accumulatedContent.split('<metadata>')[0].trim();
+                finalizeAssistantMessage(displayContent || "Connection dropped. Please send again.");
+            }
         } catch (error) {
             console.error("Chat error:", error);
+            setMiaVisualState("confused");
+            triggerAvatarClip("confused");
+            setMessages((prev) => {
+                const newMsgs = [...prev];
+                if (newMsgs.length > 0 && newMsgs[newMsgs.length - 1].role === "assistant" && !newMsgs[newMsgs.length - 1].content) {
+                    newMsgs[newMsgs.length - 1].content = "Sorry, something went wrong while contacting the server.";
+                }
+                return newMsgs;
+            });
         } finally {
             setIsStreaming(false);
+        }
+    };
+
+    const sendMessage = async () => {
+        if (!inputValue.trim() || isStreaming) return;
+
+        if (speechRecognitionRef.current) {
+            speechRecognitionRef.current.stop();
+            speechRecognitionRef.current = null;
+            setIsRecording(false);
+        }
+
+        const userMsg = inputValue;
+        setInputValue("");
+        await processChatTurn(userMsg);
+    };
+
+    const sendDrawing = async () => {
+        if (isStreaming) return;
+
+        const userMsg = inputValue.trim();
+        if (!userMsg) {
+            setSpeechError("Type your message before sending the drawing.");
+            return;
+        }
+
+        if (speechRecognitionRef.current) {
+            speechRecognitionRef.current.stop();
+            speechRecognitionRef.current = null;
+            setIsRecording(false);
+        }
+
+        const canvas = canvasRef.current;
+        if (!canvas) {
+            setSpeechError("Canvas is not ready yet.");
+            return;
+        }
+
+        const drawingImage = canvas.toDataURL("image/png");
+        setInputValue("");
+        await processChatTurn(userMsg, drawingImage);
+    };
+
+    const handleEndSession = async () => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/sessions/${id}/end`, {
+                method: 'POST'
+            });
+            const data = await res.json();
+            if (data.success) {
+                router.push(`/report/${id}`);
+            }
+        } catch (err) {
+            console.error("Error ending session:", err);
         }
     };
 
@@ -177,7 +819,7 @@ export default function SessionPage() {
             <div className="relative z-10 mx-auto flex h-[calc(100vh-80px)] w-full flex-col p-6 lg:flex-row gap-6">
 
                 {/* Left Partition - Live Chat */}
-                <div className="flex-[0.70] relative overflow-hidden rounded-[2.5rem] bg-white/40 backdrop-blur-3xl shadow-[0_8px_32px_0_rgba(26,26,46,0.04)] border border-white/60 p-6 flex flex-col min-h-0">
+                <div className="lg:basis-[42%] lg:max-w-[42%] relative overflow-hidden rounded-[2.5rem] bg-white/40 backdrop-blur-3xl shadow-[0_8px_32px_0_rgba(26,26,46,0.04)] border border-white/60 p-6 flex flex-col min-h-0">
 
                     {/* Aurora Orbs (Colorful Gradient) */}
                     <div className="absolute -left-32 -top-32 z-0 h-96 w-96 rounded-full bg-[#00897B] opacity-20 blur-[100px]" />
@@ -190,7 +832,26 @@ export default function SessionPage() {
                         style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.5' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}
                     />
 
-                    <div className="relative z-10 flex h-full w-full flex-col min-h-0">
+                    <div className="relative z-10 flex h-full w-full flex-col min-h-0 pt-2">
+                        {/* Session Header */}
+                        <div className="flex items-center justify-between mb-6 px-2">
+                            <div>
+                                <h1 className="text-[20px] font-semibold text-[#1A1A2E] leading-tight flex items-center gap-2">
+                                    <Sparkles className="text-[#00897B]" size={20} />
+                                    {sessionData?.topic || "Loading Topic..."}
+                                </h1>
+                                <p className="text-[13px] text-[#4A4A68] mt-0.5">Teaching Mia everything you know</p>
+                            </div>
+                            
+                            {!isSessionEnded && (
+                                <button
+                                    onClick={() => setShowEndModal(true)}
+                                    className="px-4 py-2 rounded-xl text-[13px] font-semibold text-[#4A4A68] bg-white/50 border border-[#E2DFD8] hover:bg-[#EF4444]/10 hover:border-[#EF4444]/30 hover:text-[#EF4444] transition-all"
+                                >
+                                    End Session
+                                </button>
+                            )}
+                        </div>
 
                         {/* Messages Area */}
                         <div
@@ -204,6 +865,13 @@ export default function SessionPage() {
                                         <div key={idx} className="flex flex-col items-end w-full">
                                             <div className="rounded-[24px] rounded-br-[8px] bg-[#5849E8] px-5 py-3 text-[15px] text-white shadow-sm max-w-[80%] whitespace-pre-wrap">
                                                 {msg.content}
+                                                {msg.drawingImage && (
+                                                    <img
+                                                        src={msg.drawingImage}
+                                                        alt="Drawing sent"
+                                                        className="mt-3 rounded-xl border border-white/20 max-h-36 w-full object-contain bg-white/10"
+                                                    />
+                                                )}
                                             </div>
                                         </div>
                                     )
@@ -231,44 +899,244 @@ export default function SessionPage() {
                         </div>
 
                         {/* Input Area */}
-                        <div className="mt-auto pt-4 relative flex items-center gap-3 w-full">
-
-                            {/* The glass input capsule */}
-                            <div className="flex-1 rounded-full bg-white/80 backdrop-blur-md border border-white px-6 py-3.5 shadow-sm">
-                                <input
-                                    type="text"
-                                    value={inputValue}
-                                    onChange={(e) => setInputValue(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') sendMessage()
-                                    }}
-                                    disabled={isStreaming}
-                                    className="w-full border-none bg-transparent text-[15px] text-[#1A1A2E] placeholder-[#9898AA] focus:ring-0 focus:outline-none disabled:opacity-50"
-                                    placeholder="Ask me anything..."
-                                />
+                        {isSessionEnded ? (
+                            <div className="mt-auto pt-4 pb-2 w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="rounded-3xl bg-[#E8F8F4] border border-[#00897B]/30 p-6 flex flex-col items-center text-center gap-4">
+                                    <div className="h-12 w-12 rounded-full bg-[#00897B] flex items-center justify-center text-white shadow-lg">
+                                        <ThumbsUp size={24} />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-[18px] font-bold text-[#00695C]">Session Successfully Concluded!</h3>
+                                        <p className="text-[14px] text-[#00695C]/80 mt-1">Mia has a much better understanding of {sessionData?.topic} now.</p>
+                                    </div>
+                                    <button
+                                        onClick={() => router.push(`/report/${id}`)}
+                                        className="w-full sm:w-auto px-10 py-3.5 rounded-2xl text-white font-bold shadow-xl transition hover:scale-105 active:scale-95"
+                                        style={{ background: "linear-gradient(135deg, #00897B 0%, #00695C 100%)" }}
+                                    >
+                                        View Your Mastery Report →
+                                    </button>
+                                </div>
                             </div>
+                        ) : (
+                            <div className="mt-auto pt-4 relative flex items-center gap-3 w-full">
 
-                            {/* Circular Action Buttons */}
-                            <div className="flex items-center gap-2 shrink-0">
-                                <button className="flex h-[50px] w-[50px] items-center justify-center rounded-full border border-[#E2DFD8] bg-white/80 backdrop-blur-md text-[#4A4A68] hover:bg-white transition-colors shadow-sm cursor-pointer">
-                                    <Mic size={20} />
-                                </button>
-                                <button
-                                    onClick={sendMessage}
-                                    disabled={!inputValue.trim() || isStreaming}
-                                    className="flex h-[50px] w-[50px] items-center justify-center rounded-full text-white shadow-md transition-transform hover:scale-[1.05] active:scale-[0.95] cursor-pointer disabled:opacity-50 disabled:hover:scale-100"
-                                    style={{ background: "linear-gradient(135deg, #00897B 0%, #00695C 100%)" }}
-                                >
-                                    <Send size={18} className="-ml-0.5" />
-                                </button>
+                                {/* The glass input capsule */}
+                                <div className="flex-1 rounded-full bg-white/80 backdrop-blur-md border border-white px-6 py-3.5 shadow-sm">
+                                    <div className="mb-2 flex items-center gap-2">
+                                        <span className="text-[11px] text-[#4A4A68]">Voice:</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSpeechError("");
+                                                setTtsProvider("gemini");
+                                            }}
+                                            className={`rounded-full px-3 py-1 text-[11px] font-medium border transition ${ttsProvider === "gemini"
+                                                ? "bg-[#E8F8F4] text-[#00695C] border-[#00897B]/40"
+                                                : "bg-white text-[#4A4A68] border-[#E2DFD8]"}`}
+                                        >
+                                            Gemini
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (!isPuterReady) {
+                                                    setSpeechError("Puter voice is still loading. Please wait a moment.");
+                                                    return;
+                                                }
+                                                setSpeechError("");
+                                                setTtsProvider("puter");
+                                            }}
+                                            className={`rounded-full px-3 py-1 text-[11px] font-medium border transition ${ttsProvider === "puter"
+                                                ? "bg-[#EEF0FF] text-[#3D30C4] border-[#5849E8]/40"
+                                                : "bg-white text-[#4A4A68] border-[#E2DFD8]"}`}
+                                        >
+                                            Puter {!isPuterReady ? "(loading)" : ""}
+                                        </button>
+                                    </div>
+                                    {(isRecording || speechError) && (
+                                        <div className="mb-1 text-[11px] leading-none">
+                                            {isRecording ? (
+                                                <span className="font-medium text-[#00897B]">Recording... tap mic again to stop.</span>
+                                            ) : (
+                                                <span className="font-medium text-[#EF4444]">{speechError}</span>
+                                            )}
+                                        </div>
+                                    )}
+                                    <input
+                                        type="text"
+                                        value={inputValue}
+                                        onChange={(e) => setInputValue(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') sendMessage()
+                                        }}
+                                        disabled={isStreaming}
+                                        className="w-full border-none bg-transparent text-[15px] text-[#1A1A2E] placeholder-[#9898AA] focus:ring-0 focus:outline-none disabled:opacity-50"
+                                        placeholder="Ask me anything..."
+                                    />
+                                </div>
+
+                                {/* Circular Action Buttons */}
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        onClick={toggleSpeechRecognition}
+                                        disabled={!speechSupported || isStreaming}
+                                        className={`flex h-[50px] w-[50px] items-center justify-center rounded-full border backdrop-blur-md transition-colors shadow-sm cursor-pointer disabled:opacity-50 ${isRecording
+                                            ? "border-[#00897B] bg-[#E8F8F4] text-[#00695C]"
+                                            : "border-[#E2DFD8] bg-white/80 text-[#4A4A68] hover:bg-white"}`}
+                                        title={isRecording ? "Stop recording" : "Start voice input"}
+                                    >
+                                        <Mic size={20} />
+                                    </button>
+                                    <button
+                                        onClick={sendMessage}
+                                        disabled={!inputValue.trim() || isStreaming}
+                                        className="flex h-[50px] w-[50px] items-center justify-center rounded-full text-white shadow-md transition-transform hover:scale-[1.05] active:scale-[0.95] cursor-pointer disabled:opacity-50 disabled:hover:scale-100"
+                                        style={{ background: "linear-gradient(135deg, #00897B 0%, #00695C 100%)" }}
+                                    >
+                                        <Send size={18} className="-ml-0.5" />
+                                    </button>
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                     </div>
                 </div>
 
+                {/* Middle Partition - Drawing Canvas Placeholder */}
+                <div className="lg:basis-[33%] lg:max-w-[33%] rounded-3xl bg-white/65 backdrop-blur-md shadow-sm border border-[#E2DFD8] p-4 flex flex-col min-h-0">
+                    <div className="flex items-center justify-between mb-3 px-1">
+                        <h2 className="text-[15px] font-semibold text-[#1A1A2E]">Teach With Drawing</h2>
+                        <span className="text-[11px] text-[#9898AA]">Canvas</span>
+                    </div>
+
+                    <div className="mb-3 flex items-center gap-2 flex-wrap">
+                        <button
+                            type="button"
+                            onClick={() => setDrawTool("pen")}
+                            className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition ${drawTool === "pen"
+                                ? "bg-[#E8F8F4] text-[#00695C] border-[#00897B]/40"
+                                : "bg-white text-[#4A4A68] border-[#E2DFD8]"}`}
+                        >
+                            Pen
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDrawTool("eraser")}
+                            className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition ${drawTool === "eraser"
+                                ? "bg-[#FEF3C7] text-[#B45309] border-[#F59E0B]/50"
+                                : "bg-white text-[#4A4A68] border-[#E2DFD8]"}`}
+                        >
+                            Eraser
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDrawTool("rectangle")}
+                            className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition ${drawTool === "rectangle"
+                                ? "bg-[#E8F8F4] text-[#00695C] border-[#00897B]/40"
+                                : "bg-white text-[#4A4A68] border-[#E2DFD8]"}`}
+                        >
+                            Rectangle
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDrawTool("circle")}
+                            className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition ${drawTool === "circle"
+                                ? "bg-[#E8F8F4] text-[#00695C] border-[#00897B]/40"
+                                : "bg-white text-[#4A4A68] border-[#E2DFD8]"}`}
+                        >
+                            Circle
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDrawTool("line")}
+                            className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition ${drawTool === "line"
+                                ? "bg-[#E8F8F4] text-[#00695C] border-[#00897B]/40"
+                                : "bg-white text-[#4A4A68] border-[#E2DFD8]"}`}
+                        >
+                            Line
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDrawTool("triangle")}
+                            className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition ${drawTool === "triangle"
+                                ? "bg-[#E8F8F4] text-[#00695C] border-[#00897B]/40"
+                                : "bg-white text-[#4A4A68] border-[#E2DFD8]"}`}
+                        >
+                            Triangle
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDrawTool("text")}
+                            className={`px-3 py-1.5 rounded-lg text-[12px] font-medium border transition ${drawTool === "text"
+                                ? "bg-[#EEF0FF] text-[#3D30C4] border-[#5849E8]/40"
+                                : "bg-white text-[#4A4A68] border-[#E2DFD8]"}`}
+                        >
+                            Text
+                        </button>
+                        <input
+                            type="color"
+                            value={brushColor}
+                            onChange={(e) => setBrushColor(e.target.value)}
+                            className="h-8 w-9 rounded border border-[#E2DFD8] bg-white p-0"
+                            title="Brush color"
+                        />
+                        <div className="flex items-center gap-2 px-2 py-1 rounded-lg border border-[#E2DFD8] bg-white">
+                            <span className="text-[11px] text-[#4A4A68]">Size</span>
+                            <input
+                                type="range"
+                                min={2}
+                                max={16}
+                                value={brushSize}
+                                onChange={(e) => setBrushSize(Number(e.target.value))}
+                                className="w-20"
+                            />
+                        </div>
+                        {drawTool === "text" && (
+                            <input
+                                type="text"
+                                value={shapeText}
+                                onChange={(e) => setShapeText(e.target.value)}
+                                placeholder="Text to place"
+                                className="h-9 w-40 rounded-lg border border-[#E2DFD8] bg-white px-3 text-[12px] text-[#1A1A2E] placeholder-[#9898AA] focus:outline-none focus:ring-2 focus:ring-[#00897B]/30"
+                            />
+                        )}
+                    </div>
+
+                    <div ref={canvasContainerRef} className="flex-1 rounded-2xl border border-dashed border-[#C8C5BC] bg-[#F7F6F2] relative overflow-hidden min-h-[260px] lg:min-h-0">
+                        <div className="absolute inset-0 pointer-events-none opacity-25" style={{ backgroundImage: "radial-gradient(circle, #D8D4CC 1px, transparent 1px)", backgroundSize: "16px 16px" }} />
+                        <canvas
+                            ref={canvasRef}
+                            className="absolute inset-0 w-full h-full touch-none"
+                            onPointerDown={startDrawing}
+                            onPointerMove={drawLine}
+                            onPointerUp={(e) => stopDrawing(e)}
+                            onPointerLeave={stopDrawing}
+                        />
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            onClick={clearCanvas}
+                            className="px-3 py-2 rounded-xl border border-[#E2DFD8] bg-white text-[12px] font-medium text-[#4A4A68] hover:bg-[#F7F6F2] transition"
+                        >
+                            Clear
+                        </button>
+                        <button
+                            type="button"
+                            onClick={sendDrawing}
+                            disabled={isStreaming}
+                            className="px-3 py-2 rounded-xl text-[12px] font-medium text-white"
+                            style={{ background: "linear-gradient(135deg, #00897B 0%, #00695C 100%)" }}
+                        >
+                            Send Drawing
+                        </button>
+                    </div>
+                </div>
+
                 {/* Right Partition */}
-                <div className="flex-[0.30] flex flex-col gap-4">
+                <div className="lg:basis-[25%] lg:max-w-[25%] flex flex-col gap-4">
 
                     {/* Right Top Section - Avatar Video Area */}
                     <div className="flex-[0.4] rounded-3xl bg-[#1A1A2E] shadow-lg border border-[#E2DFD8]/20 p-0 flex flex-col items-center justify-center relative overflow-hidden">
@@ -280,12 +1148,19 @@ export default function SessionPage() {
                           rather than the super bright page background!
                         */}
                         <video
+                            key={`${avatarVideoSrc}-${avatarPlaybackKey}`}
                             autoPlay
-                            loop
+                            loop={!avatarOneShot}
                             muted
                             playsInline
+                            onEnded={() => {
+                                if (!avatarOneShot) return;
+                                setAvatarVideoSrc("/normal.mp4");
+                                setAvatarOneShot(false);
+                                setAvatarPlaybackKey((k) => k + 1);
+                            }}
                             className="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-95 pointer-events-none"
-                            src={"/GIF_Animation_Creation.mp4"}
+                            src={avatarVideoSrc}
                         />
                     </div>
 
@@ -318,6 +1193,38 @@ export default function SessionPage() {
                 Simulate AI
             </button>
 
+            {/* Confirmation Modal */}
+            {showEndModal && (
+                <div className="fixed inset-0 z-100 flex items-center justify-center p-6 bg-black/20 backdrop-blur-[2px] animate-in fade-in duration-200">
+                    <div className="w-full max-w-md rounded-[2.5rem] bg-white p-8 shadow-2xl border border-[#E2DFD8] animate-in zoom-in-95 duration-200">
+                        <div className="flex flex-col items-center text-center gap-6">
+                            <div className="h-16 w-16 rounded-full bg-[#FEF3C7] flex items-center justify-center text-[#F59E0B]">
+                                <AlertCircle size={32} />
+                            </div>
+                            <div>
+                                <h2 className="text-[22px] font-bold text-[#1A1A2E]">End this session?</h2>
+                                <p className="text-[15px] text-[#4A4A68] mt-2">
+                                    You can end the session now to see your mastery report, or keep teaching Mia to cover more concepts.
+                                </p>
+                            </div>
+                            <div className="flex flex-col w-full gap-3 mt-2">
+                                <button
+                                    onClick={handleEndSession}
+                                    className="w-full py-4 rounded-2xl bg-[#EF4444] text-white font-bold shadow-lg hover:bg-red-600 transition active:scale-[0.98]"
+                                >
+                                    Yes, End Session
+                                </button>
+                                <button
+                                    onClick={() => setShowEndModal(false)}
+                                    className="w-full py-4 rounded-2xl bg-white border border-[#E2DFD8] text-[#4A4A68] font-bold hover:bg-[#F7F6F2] transition active:scale-[0.98]"
+                                >
+                                    Continue Teaching
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

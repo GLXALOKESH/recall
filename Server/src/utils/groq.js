@@ -25,7 +25,8 @@ export async function call_llama_8b(messages, options = {}) {
  */
 export async function call_llama_70b(messages, options = {}) {
     const response = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
+        // model: "llama-3.3-70b-versatile",
+        model: "openai/gpt-oss-120b",
         messages: messages,
         ...options
     });
