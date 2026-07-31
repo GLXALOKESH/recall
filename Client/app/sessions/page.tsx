@@ -103,10 +103,15 @@ export default function SessionsPage() {
                             return (
                                 <Link href={`/report/${session.sessionId || session._id}`} key={session.sessionId || session._id}>
                                     <div
-                                        className="group relative flex h-full flex-col justify-between overflow-hidden rounded-2xl bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
-                                        style={{ border: "1px solid #E2DFD8", cursor: "pointer" }}
-                                        onMouseEnter={e => (e.currentTarget.style.borderColor = "#C8C5BC")}
-                                        onMouseLeave={e => (e.currentTarget.style.borderColor = "#E2DFD8")}
+                                        className="group relative flex h-full flex-col justify-between overflow-hidden rounded-2xl p-6 transition-all hover:-translate-y-1"
+                                        style={{
+                                            background: "rgba(255, 255, 255, 0.55)",
+                                            backdropFilter: "blur(30px) saturate(180%)",
+                                            WebkitBackdropFilter: "blur(30px) saturate(180%)",
+                                            border: "1px solid rgba(255, 255, 255, 0.6)",
+                                            boxShadow: "0 4px 24px rgba(0, 0, 0, 0.06), inset 0 1px 0 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 0 rgba(255, 255, 255, 0.2)",
+                                            cursor: "pointer",
+                                        }}
                                     >
                                         <div>
                                             {/* Top Meta Row */}
@@ -139,8 +144,12 @@ export default function SessionsPage() {
                                                 {session.concepts?.map((concept: string) => (
                                                     <span
                                                         key={concept}
-                                                        className="rounded-lg px-2.5 py-1 text-[11px] font-medium text-[#4A4A68]"
-                                                        style={{ background: "#F0EEE9", border: "1px solid #E2DFD8" }}
+                                                        className="rounded-lg px-2.5 py-1 text-[11px] font-medium"
+                                                        style={{
+                                                            color: "rgba(74, 74, 104, 0.9)",
+                                                            background: "rgba(255, 255, 255, 0.5)",
+                                                            border: "1px solid rgba(255, 255, 255, 0.6)",
+                                                        }}
                                                     >
                                                         {concept}
                                                     </span>
@@ -149,7 +158,7 @@ export default function SessionsPage() {
                                         </div>
 
                                         {/* Bottom View Link */}
-                                        <div className="flex items-center justify-end border-t border-[#E2DFD8] pt-4 mt-auto">
+                                        <div className="flex items-center justify-end border-t border-white/40 pt-4 mt-auto">
                                             <span className="flex items-center gap-1 text-[13px] font-medium text-[#00897B] transition-transform group-hover:translate-x-1">
                                                 View Report <ArrowRight size={14} />
                                             </span>
@@ -162,7 +171,16 @@ export default function SessionsPage() {
                 )}
 
                 {!loading && sessions.length === 0 && (
-                    <div className="flex flex-col items-center justify-center rounded-3xl py-24 text-center" style={{ border: "2px dashed #E2DFD8", background: "white" }}>
+                    <div
+                        className="flex flex-col items-center justify-center rounded-3xl py-24 text-center"
+                        style={{
+                            background: "rgba(255, 255, 255, 0.4)",
+                            backdropFilter: "blur(30px) saturate(180%)",
+                            WebkitBackdropFilter: "blur(30px) saturate(180%)",
+                            border: "1px solid rgba(255, 255, 255, 0.5)",
+                            boxShadow: "0 4px 24px rgba(0, 0, 0, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.6)",
+                        }}
+                    >
                         <Brain size={48} className="mb-4 text-[#C4C3CE]" />
                         <h3 className="mb-2 text-[18px] font-semibold text-[#1A1A2E]">No teaching sessions yet</h3>
                         <p className="mb-6 max-w-sm text-[14px] text-[#9898AA]">
