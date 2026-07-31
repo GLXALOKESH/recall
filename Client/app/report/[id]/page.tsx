@@ -4,8 +4,6 @@ import { useParams, useRouter } from "next/navigation"
 import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "motion/react"
 import {
-    Trophy,
-    Target,
     Zap,
     AlertCircle,
     ChevronDown,
@@ -17,12 +15,12 @@ import {
     Quote,
     CheckCircle2,
     XCircle,
-    Loader2
 } from "lucide-react"
 import RadarChart from "@/components/RadarChart"
 import { BACKEND_URL } from "@/lib/config"
 import { DotPattern } from "@/components/ui/dot-pattern"
-import html2canvas from "html2canvas"
+import { pdf } from "@react-pdf/renderer"
+import ReportPDF from "@/components/ReportPDF"
 
 export default function ReportPage() {
     const params = useParams()
@@ -36,7 +34,6 @@ export default function ReportPage() {
 
     // For share card download
     const reportRef = useRef<HTMLDivElement>(null)
-    const shareCardRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
         if (!id) return
@@ -97,29 +94,21 @@ export default function ReportPage() {
     }, [isLoading])
 
     const handleDownload = async () => {
-        if (!shareCardRef.current) return
+        try {
+            const blob = await pdf(
+                <ReportPDF session={session} report={report} />
+            ).toBlob()
 
-        // Temporarily show the card for capture
-        const card = shareCardRef.current
-        card.style.display = 'block'
-        card.style.position = 'fixed'
-        card.style.left = '-9999px'
-
-        const canvas = await html2canvas(card, {
-            backgroundColor: "#F5F3EE",
-            scale: 2,
-            logging: false,
-            useCORS: true,
-            width: 600,
-            height: 800
-        } as any)
-
-        card.style.display = 'none'
-
-        const link = document.createElement('a')
-        link.download = `recall-report-${session?.topic || 'session'}.png`
-        link.href = canvas.toDataURL('image/png')
-        link.click()
+            const url = URL.createObjectURL(blob)
+            const link = document.createElement("a")
+            link.download = `recall-report-${session?.topic || 'session'}.pdf`
+            link.href = url
+            link.click()
+            URL.revokeObjectURL(url)
+        } catch (err) {
+            console.error("Download failed:", err)
+            alert("Failed to download report. Please try again.")
+        }
     }
 
     const copyLink = () => {
@@ -445,58 +434,6 @@ export default function ReportPage() {
                         Share Result
                     </button>
                 </section>
-            </div>
-
-            {/* 7. Hidden Share Card for Download */}
-            <div
-                ref={shareCardRef}
-                style={{ display: 'none', width: '600px' }}
-                className="bg-[#F5F3EE] p-12 text-[#1A1A2E] font-sans relative"
-            >
-                <div className="absolute top-0 right-0 w-64 h-64 bg-[#00897B]/10 blur-[80px] -z-10" />
-                <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#5849E8]/10 blur-[80px] -z-10" />
-
-                <div className="flex justify-between items-start mb-12">
-                    <div>
-                        <h1 className="text-[28px] font-serif tracking-tight">Recall</h1>
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-[#9898AA]">Mastery Report · {new Date().toLocaleDateString()}</p>
-                    </div>
-                    <div className="bg-[#00897B] text-white px-4 py-2 rounded-xl text-[20px] font-bold">
-                        {report.overall_score}
-                    </div>
-                </div>
-
-                <div className="mb-12">
-                    <p className="text-[13px] font-bold uppercase tracking-widest text-[#4A4A68] mb-1">Topic</p>
-                    <h2 className="text-[36px] font-bold leading-none">{session.topic}</h2>
-                </div>
-
-                <div className="grid grid-cols-3 gap-6 mb-12">
-                    <div className="bg-white/60 border border-white p-6 rounded-3xl">
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-[#9898AA] mb-2">Explanations</p>
-                        <p className="text-[24px] font-bold">{session.messages.filter((m: any) => m.role === 'user').length}</p>
-                    </div>
-                    <div className="bg-white/60 border border-white p-6 rounded-3xl">
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-[#9898AA] mb-2">Duration</p>
-                        <p className="text-[24px] font-bold">{session.durationMinutes}m</p>
-                    </div>
-                    <div className="bg-white/60 border border-white p-6 rounded-3xl">
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-[#9898AA] mb-2">Paste Events</p>
-                        <p className="text-[24px] font-bold">{session.pasteCount || 0}</p>
-                    </div>
-                </div>
-
-                <div className="bg-white/80 border border-white p-8 rounded-[2.5rem] mb-12 flex items-center justify-center aspect-square shadow-sm">
-                    {/* Note: In a real app, you'd want a static image or a separate render of the radar here */}
-                    <div className="text-center">
-                        <Trophy className="mx-auto mb-4 text-[#00897B]" size={48} />
-                        <p className="text-[18px] font-serif italic">"{report.opening_summary}"</p>
-                    </div>
-                </div>
-
-                <div className="text-center text-[#9898AA] text-[12px]">
-                    teachback.app/report/{id}
-                </div>
             </div>
 
             {/* Public Footer */}

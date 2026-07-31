@@ -41,41 +41,68 @@ export default function RootLayout({
             style={{
               position: "fixed",
               top: "20px",
-              left: "50%",
-              transform: "translateX(-50%)",
+              left: "0",
+              right: "0",
+              margin: "0 auto",
               width: "calc(100% - 40px)",
               maxWidth: "1100px",
               zIndex: 50,
-              padding: "12px 24px",
+              padding: "14px 28px",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              background: "rgba(255, 255, 255, 0.15)",
-              backdropFilter: "blur(24px)",
-              WebkitBackdropFilter: "blur(24px)",
-              border: "1px solid rgba(255, 255, 255, 0.3)",
-              borderRadius: "24px",
-              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.04)",
+              borderRadius: "28px",
+              background: "var(--liquid-bg)",
+              WebkitBackdropFilter: "blur(var(--liquid-blur)) saturate(var(--liquid-saturate))",
+              backdropFilter: "blur(var(--liquid-blur)) saturate(var(--liquid-saturate))",
+              border: "1px solid var(--liquid-border)",
+              boxShadow:
+                "0 8px 40px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.8), inset 0 -1px 0 0 rgba(255, 255, 255, 0.3)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "32px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "36px" }}>
               <Link href="/" style={{ textDecoration: "none" }}>
                 <span
                   style={{
                     fontFamily: "var(--font-display, 'Fraunces', serif)",
-                    fontSize: "24px",
+                    fontSize: "26px",
                     fontWeight: 400,
                     color: "#00897B",
+                    letterSpacing: "-0.02em",
                   }}
                 >
                   Recall
                 </span>
               </Link>
-              <nav style={{ display: "flex", gap: "20px" }}>
-                <Link href="/sessions" style={{ textDecoration: "none", color: "#4A4A68", fontSize: "15px", fontWeight: 500 }}>
+              <nav style={{ display: "flex", gap: "6px" }}>
+                <Link
+                  href="/sessions"
+                  style={{
+                    textDecoration: "none",
+                    color: "var(--nav-link-color)",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    padding: "7px 14px",
+                    borderRadius: "12px",
+                    letterSpacing: "0.01em",
+                    transition: "all 0.3s ease",
+                  }}
+                >
                   Sessions
                 </Link>
-                <Link href="/onboard" style={{ textDecoration: "none", color: "#4A4A68", fontSize: "15px", fontWeight: 500 }}>
+                <Link
+                  href="/onboard"
+                  style={{
+                    textDecoration: "none",
+                    color: "var(--nav-link-color)",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    padding: "7px 14px",
+                    borderRadius: "12px",
+                    letterSpacing: "0.01em",
+                    transition: "all 0.3s ease",
+                  }}
+                >
                   New Session
                 </Link>
               </nav>
@@ -83,40 +110,53 @@ export default function RootLayout({
 
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <Show when="signed-out">
-                <SignInButton mode="modal">
-                  <button
-                    style={{
-                      fontFamily: "var(--font-ui, 'DM Sans', sans-serif)",
-                      fontSize: "13px",
-                      fontWeight: 500,
-                      color: "#4A4A68",
-                      background: "transparent",
-                      border: "1px solid #E2DFD8",
-                      borderRadius: "10px",
-                      padding: "6px 14px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Sign in
-                  </button>
-                </SignInButton>
-                <SignUpButton mode="modal">
-                  <button
-                    style={{
-                      fontFamily: "var(--font-ui, 'DM Sans', sans-serif)",
-                      fontSize: "13px",
-                      fontWeight: 600,
-                      color: "#fff",
-                      background: "linear-gradient(135deg, #00897B 0%, #00695C 100%)",
-                      border: "none",
-                      borderRadius: "10px",
-                      padding: "6px 14px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Sign up
-                  </button>
-                </SignUpButton>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    borderRadius: "14px",
+                    background: "var(--btn-group-bg)",
+                    border: "1px solid var(--btn-group-border)",
+                    overflow: "hidden",
+                    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.5)",
+                  }}
+                >
+                  <SignInButton mode="modal">
+                    <button
+                      style={{
+                        fontFamily: "var(--font-ui, 'DM Sans', sans-serif)",
+                        fontSize: "13px",
+                        fontWeight: 500,
+                        color: "var(--btn-ghost-color)",
+                        background: "var(--btn-ghost-bg)",
+                        border: "none",
+                        padding: "8px 18px",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                        borderRight: "1px solid var(--btn-group-border)",
+                      }}
+                    >
+                      Sign in
+                    </button>
+                  </SignInButton>
+                  <SignUpButton mode="modal">
+                    <button
+                      style={{
+                        fontFamily: "var(--font-ui, 'DM Sans', sans-serif)",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        color: "var(--btn-solid-color)",
+                        background: "var(--btn-solid-bg)",
+                        border: "none",
+                        padding: "8px 18px",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      Sign up
+                    </button>
+                  </SignUpButton>
+                </div>
               </Show>
               <Show when="signed-in">
                 <UserButton />
