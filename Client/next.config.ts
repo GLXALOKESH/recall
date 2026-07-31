@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
     maxInactiveAge: 60 * 1000,
     pagesBufferLength: 5,
   },
-  allowedDevOrigins: ['192.168.31.73', 'localhost', '127.0.0.1'],
+  allowedDevOrigins: ['192.168.31.73', 'localhost', '127.0.0.1','*.proveniq.co.in'],
 };
 
 export default nextConfig;
