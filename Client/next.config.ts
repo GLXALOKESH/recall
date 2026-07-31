@@ -1,8 +1,15 @@
 import type { NextConfig } from "next";
 
-const nextConfig = {
+const nextConfig: NextConfig = {
   /* config options here */
-  allowedDevOrigins: ["10.63.189.76"],
-} as any;
+  experimental: {
+    proxyTimeout: 30000,
+  },
+  onDemandEntries: {
+    maxInactiveAge: 60 * 1000,
+    pagesBufferLength: 5,
+  },
+  allowedDevOrigins: ['192.168.31.73', 'localhost', '127.0.0.1'],
+};
 
 export default nextConfig;
