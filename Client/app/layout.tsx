@@ -3,6 +3,7 @@ import { DM_Sans, Fraunces } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import Navbar from "@/components/Navbar";
 import "./globals.css";
+import { BACKEND_URL } from "@/lib/config"; 
 
 const dmSans = DM_Sans({
   variable: "--font-ui",
@@ -27,6 +28,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  console.log(BACKEND_URL)
   return (
     <ClerkProvider>
       <html
