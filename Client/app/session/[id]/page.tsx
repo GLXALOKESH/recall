@@ -46,7 +46,7 @@ export default function SessionPage() {
     const [isSessionEnded, setIsSessionEnded] = useState(false)
     const [showEndModal, setShowEndModal] = useState(false)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
-    const composerInputRef = useRef<HTMLInputElement | null>(null)
+    const composerInputRef = useRef<HTMLTextAreaElement | null>(null)
     const composerValueRef = useRef("")
     const activeAudioRef = useRef<HTMLAudioElement | null>(null)
     const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null)
@@ -90,7 +90,7 @@ export default function SessionPage() {
         setHasInput((prev) => (prev === nextHasInput ? prev : nextHasInput));
     };
 
-    const handleComposerChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleComposerChange = (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const nextValue = event.target.value;
         composerValueRef.current = nextValue;
 
@@ -758,6 +758,9 @@ export default function SessionPage() {
         }
 
         setComposerValue("");
+        if (composerInputRef.current) {
+            composerInputRef.current.style.height = "auto"
+        }
         await processChatTurn(userMsg);
     };
 
@@ -784,6 +787,9 @@ export default function SessionPage() {
 
         const drawingImage = canvas.toDataURL("image/png");
         setComposerValue("");
+        if (composerInputRef.current) {
+            composerInputRef.current.style.height = "auto"
+        }
         await processChatTurn(userMsg, drawingImage);
     };
 
@@ -853,7 +859,7 @@ export default function SessionPage() {
             />
 
             {/* Session Content */}
-            <div className="relative z-10 mx-auto flex h-[calc(100vh-80px)] w-full flex-col p-6 lg:flex-row gap-6">
+            <div className="relative z-10 mx-auto flex h-[calc(100vh-48px)] w-full flex-col px-4 pt-16 pb-2 lg:flex-row gap-6">
 
                 {/* Left Partition - Live Chat */}
                 <div className={`${isCanvasCollapsed ? "lg:basis-[75%] lg:max-w-[75%]" : "lg:basis-[42%] lg:max-w-[42%]"} relative overflow-hidden rounded-[2.5rem] bg-white/40 backdrop-blur-3xl shadow-[0_8px_32px_0_rgba(26,26,46,0.04)] border border-white/60 p-6 flex flex-col min-h-0 transition-all duration-300`}>
@@ -967,10 +973,20 @@ export default function SessionPage() {
                                 </div>
                             </div>
                         ) : (
-                            <div className="mt-auto pt-4 relative flex items-center gap-3 w-full">
+                            <div className="mt-auto pt-4 relative flex items-end gap-3 w-full">
 
                                 {/* The glass input capsule */}
-                                <div className="flex-1 rounded-full bg-white/80 backdrop-blur-md border border-white px-6 py-3.5 shadow-sm">
+                                <div
+                                    className="flex-1 px-5 py-3 transition-all duration-200"
+                                    style={{
+                                        borderRadius: "24px",
+                                        background: "rgba(255, 255, 255, 0.55)",
+                                        backdropFilter: "blur(30px) saturate(180%)",
+                                        WebkitBackdropFilter: "blur(30px) saturate(180%)",
+                                        border: "1px solid rgba(255, 255, 255, 0.6)",
+                                        boxShadow: "0 4px 20px rgba(0, 0, 0, 0.05), inset 0 1px 0 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 0 rgba(255, 255, 255, 0.2)",
+                                    }}
+                                >
                                     <div className="mb-2 flex items-center gap-2">
                                         <span className="text-[11px] text-[#4A4A68]">Voice:</span>
                                         <button
@@ -1011,17 +1027,26 @@ export default function SessionPage() {
                                             )}
                                         </div>
                                     )}
-                                    <input
+                                    <textarea
                                         ref={composerInputRef}
-                                        type="text"
+                                        rows={1}
                                         onChange={handleComposerChange}
                                         onPaste={handleComposerPaste}
                                         onKeyDown={(e) => {
-                                            if (e.key === 'Enter') sendMessage()
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault()
+                                                sendMessage()
+                                            }
                                         }}
                                         disabled={isStreaming}
-                                        className="w-full border-none bg-transparent text-[15px] text-[#1A1A2E] placeholder-[#9898AA] focus:ring-0 focus:outline-none disabled:opacity-50"
+                                        className="w-full border-none bg-transparent text-[15px] text-[#1A1A2E] placeholder-[#9898AA] focus:ring-0 focus:outline-none disabled:opacity-50 resize-none overflow-y-auto leading-[22px]"
                                         placeholder="Ask me anything..."
+                                        style={{ maxHeight: "66px" }}
+                                        onInput={(e) => {
+                                            const target = e.target as HTMLTextAreaElement
+                                            target.style.height = "22px"
+                                            target.style.height = Math.min(target.scrollHeight, 66) + "px"
+                                        }}
                                     />
                                 </div>
 

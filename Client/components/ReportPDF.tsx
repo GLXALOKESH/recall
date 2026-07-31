@@ -58,9 +58,15 @@ function getScoreLabel(score: number) {
 interface Props {
     session: any
     report: any
+    user: {
+        firstName?: string | null
+        lastName?: string | null
+        emailAddress?: string | null
+        imageUrl?: string | null
+    } | null | undefined
 }
 
-export default function ReportPDF({ session, report }: Props) {
+export default function ReportPDF({ session, report, user }: Props) {
     const scoreColor = getScoreColor(report.overall_score)
     const userCount = session.messages.filter((m: any) => m.role === "user").length
     const coveredCount = Object.values(session.depthScores).filter((s: any) => s >= 3).length
@@ -83,6 +89,25 @@ export default function ReportPDF({ session, report }: Props) {
                 <Text style={s.sectionLabel}>Mastery Score</Text>
                 <Text style={[s.scoreNum, { color: scoreColor }]}>{report.overall_score}</Text>
                 <Text style={[s.scoreLabel, { color: scoreColor }]}>{getScoreLabel(report.overall_score)}</Text>
+
+                {/* User Info */}
+                {user && (
+                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16, backgroundColor: "rgba(255,255,255,0.4)", borderRadius: 10, padding: 10, border: "0.5 solid rgba(255,255,255,0.6)" }}>
+                        <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: "#00897B", marginRight: 10, alignItems: "center", justifyContent: "center" }}>
+                            <Text style={{ color: "#fff", fontSize: 14, fontFamily: "Helvetica-Bold" }}>
+                                {user.firstName?.[0] || "?"}
+                            </Text>
+                        </View>
+                        <View>
+                            <Text style={{ fontSize: 10, fontFamily: "Helvetica-Bold" }}>
+                                {user.firstName} {user.lastName}
+                            </Text>
+                            <Text style={{ fontSize: 8, color: "#4A4A68" }}>
+                                {user.emailAddress}
+                            </Text>
+                        </View>
+                    </View>
+                )}
 
                 {/* Topic */}
                 <Text style={s.sectionLabel}>Topic</Text>

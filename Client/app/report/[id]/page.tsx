@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation"
 import { useState, useEffect, useRef } from "react"
+import { useUser } from "@clerk/nextjs"
 import { motion, AnimatePresence } from "motion/react"
 import {
     Zap,
@@ -25,6 +26,7 @@ import ReportPDF from "@/components/ReportPDF"
 export default function ReportPage() {
     const params = useParams()
     const router = useRouter()
+    const { user } = useUser()
     const { id } = params
 
     const [session, setSession] = useState<any>(null)
@@ -96,7 +98,16 @@ export default function ReportPage() {
     const handleDownload = async () => {
         try {
             const blob = await pdf(
-                <ReportPDF session={session} report={report} />
+                <ReportPDF
+                    session={session}
+                    report={report}
+                    user={user ? {
+                        firstName: user.firstName,
+                        lastName: user.lastName,
+                        emailAddress: user.emailAddresses?.[0]?.emailAddress,
+                        imageUrl: user.imageUrl,
+                    } : null}
+                />
             ).toBlob()
 
             const url = URL.createObjectURL(blob)
@@ -185,6 +196,30 @@ export default function ReportPage() {
                             {getScoreLabel(report.overall_score)}
                         </div>
                     </motion.div>
+
+                    {user && (
+                        <motion.div
+                            initial={{ y: 20, opacity: 0 }}
+                            whileInView={{ y: 0, opacity: 1 }}
+                            viewport={{ once: true }}
+                            transition={{ delay: 0.3, duration: 0.8 }}
+                            className="mt-8 flex items-center gap-4 bg-white/40 backdrop-blur-md rounded-2xl px-6 py-4 border border-white/60"
+                        >
+                            {user.imageUrl && (
+                                <img
+                                    src={user.imageUrl}
+                                    alt={user.firstName || "User"}
+                                    className="h-10 w-10 rounded-full border-2 border-white shadow-sm"
+                                />
+                            )}
+                            <div>
+                                <p className="text-[14px] font-semibold text-[#1A1A2E]">
+                                    {user.firstName} {user.lastName}
+                                </p>
+                                <p className="text-[12px] text-[#4A4A68]">{user.emailAddresses?.[0]?.emailAddress}</p>
+                            </div>
+                        </motion.div>
+                    )}
 
                     <motion.div
                         initial={{ y: 20, opacity: 0 }}
